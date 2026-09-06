@@ -15,7 +15,6 @@ import { carrierKeyOf, type Scoped } from '@deepseek-ai/dsh-scope'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
-import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import type {
   InitializeParams,
   InitializeResult,
@@ -78,7 +77,6 @@ export class HarnessSdkJsonRpcServer {
   private model = 'deepseek-official'
   private reasoningEffort: ReturnType<typeof ReasoningEffortId> | undefined
   private maxTokens: number | undefined
-  private llmFiber: { dispose(): Promise<void> } | undefined
   private readonly sessions = new Map<string, SessionRecord>()
   private readonly sessionCreations = new Map<string, Promise<SessionRecord>>()
   private readonly disposers: (() => void)[] = []
@@ -128,7 +126,7 @@ export class HarnessSdkJsonRpcServer {
   }
 
   /**
-   * Validate and configure the SDK route, mounting the DeepSeek fallback only when unowned.
+   * Validate and configure the SDK route; the deployment must mount the requested provider adapter.
    * @param params - SDK handshake parameters.
    * @returns server identity for the handshake.
    */
@@ -148,8 +146,7 @@ export class HarnessSdkJsonRpcServer {
       ? undefined
       : ReasoningEffortId(params.reasoningEffort)
     if (!this.hasAdapterFor(provider)) {
-      if (provider !== 'deepseek-official') throw new Error(`no adapter registered for provider "${provider}"`)
-      this.llmFiber = await this.ctx.plugin(LlmDeepSeek, {})
+      throw new Error(`no adapter registered for provider "${provider}"`)
     }
     // Adapter presence was read from this service above; a successful fallback mount also requires it.
     const llm = this.ctx.get('llm') as LlmRuntime
@@ -199,7 +196,7 @@ export class HarnessSdkJsonRpcServer {
   }
 
   /**
-   * Dispose server-owned agents, adapter, and subscriptions to quiescence.
+   * Dispose server-owned agents and subscriptions to quiescence.
    * The surrounding context remains running.
    * @returns empty JSON-RPC result.
    */
@@ -225,9 +222,7 @@ export class HarnessSdkJsonRpcServer {
     }
     const teardownResults = await Promise.allSettled([
       ...records.map(rec => Promise.resolve().then(() => rec.handle.dispose())),
-      ...(this.llmFiber === undefined ? [] : [Promise.resolve().then(() => this.llmFiber?.dispose())]),
     ])
-    this.llmFiber = undefined
     failures.push(...teardownResults
       .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
       .map(result => result.reason as unknown))

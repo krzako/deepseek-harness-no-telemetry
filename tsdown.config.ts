@@ -16,7 +16,18 @@ function isBuildFaceClient(value: unknown): boolean {
 export default defineConfig(({ env }) => {
   const client = isBuildFaceClient(env?.DSH_BUILD_FACE)
   return {
-    workspace: ['vendor/*', 'packages/*/*', 'apps/cli'],
+    workspace: {
+      include: [
+        'vendor/*', 'packages/*/*', 'apps/cli'
+      ],
+      exclude: [
+        'packages/llm/deepseek-llm-api-extensions',
+        'packages/llm/llm-deepseek',
+        'packages/llm/plugin-package-inventory-deepseek',
+        'packages/session/session-log-deepseek',
+        'packages/session/session-telemetry-otel',
+      ],
+    },
     entry: client ? '' : ['lib/types/{index,invariant,startup}.js'],
     outDir: 'lib',
     format: ['esm'],
