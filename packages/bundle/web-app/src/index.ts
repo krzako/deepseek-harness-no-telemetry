@@ -154,8 +154,14 @@ function webSurfacePrompt(webUrl: string): string {
     + 'Do not start a replacement server unless the user asks; if one is needed, use a managed background job and verify its exact URL.'
 }
 
-/** Resolve the canonical loopback URL from the active Web server. */
+/** Resolve the canonical Web URL or loopback URL from the active Web server. */
 function localWebUrl(ctx: Context): string {
+  const publicUrl = process.env.DSH_PUBLIC_WEB_URL?.replace(/\/+$/u, '')
+
+  if (publicUrl) {
+    return publicUrl
+  }
+
   const port = ctx.get('webServer')?.port
   if (port === undefined) throw new Error('web-app: webServer service missing while resolving Web runtime')
   return `http://${LOOPBACK_HOST}:${String(port)}`
