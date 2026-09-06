@@ -725,7 +725,36 @@ function finishReasonValue(value: SessionFormatJsonValue | undefined, label: str
 }
 
 function replayEnvelopeValue(value: SessionFormatJsonValue | undefined, label: string): void {
-  const replay = exactRecord(value, label, ['response'], ['blocks'])
+  const replay = releasedV0Record(value, label)
+
+  // Released llm-pi-ai v1 stored replay metadata as one flat object:
+  // { kind: 'pi-ai', version: 1, api, provider, model, ..., blocks }.
+  // The newer writer uses { response, blocks }. Both shapes were released as
+  // Session format v0 payloads, so the frozen v0 reader must accept both.
+  if (!Object.hasOwn(replay, 'response')) {
+    assertReleasedV0Keys(
+      replay,
+      ['kind', 'version', 'api', 'provider', 'model', 'stopReason', 'blocks'],
+      ['responseModel', 'responseId'],
+      label,
+    )
+    literalValue(replay['kind'], ['pi-ai'], `${label} kind`)
+    literalValue(replay['version'], [1], `${label} version`)
+    nonEmptyString(replay['api'], `${label} api`)
+    nonEmptyString(replay['provider'], `${label} provider`)
+    nonEmptyString(replay['model'], `${label} model`)
+    literalValue(
+      replay['stopReason'],
+      ['stop', 'length', 'toolUse', 'error', 'aborted'],
+      `${label} stopReason`,
+    )
+    if (replay['responseModel'] !== undefined) stringValue(replay['responseModel'], `${label} responseModel`)
+    if (replay['responseId'] !== undefined) stringValue(replay['responseId'], `${label} responseId`)
+    if (!Array.isArray(replay['blocks'])) throw new SessionFormatError(`${label} blocks must be an array`)
+    return
+  }
+
+  assertReleasedV0Keys(replay, ['response'], ['blocks'], label)
   if (replay['blocks'] !== undefined && !Array.isArray(replay['blocks'])) {
     throw new SessionFormatError(`${label} blocks must be an array`)
   }
