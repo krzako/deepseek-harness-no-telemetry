@@ -61,6 +61,8 @@ Each profile may set a `retryPolicy`; omission uses normal mode with five retrie
         baseURL: https://gateway.acme.example/v1
         compat:
           thinkingFormat: deepseek
+          sendSessionAffinityHeaders: true
+          sessionAffinityFormat: openrouter
         models:
           - id: acme-think
             name: Acme Think
@@ -98,7 +100,7 @@ A profile's `models` list replaces the route's installed catalog rather than ext
 
 ### Run with reasoning and wire compatibility
 
-`reasoningEfforts` declares a model's selectable thinking levels: each key is a level selectors offer, its value the spelling dispatch sends on the wire, so `max: ultra` renames a level for a gateway with its own vocabulary. Omitting the field keeps the installed catalog entry's capability; `false` declares a non-reasoning model. `compat` switches reshape the request for endpoints pi-ai cannot recognize — which role carries the system prompt, which field caps output, how a thinking level travels — configurable per route and per model. A model neither the entry nor the installed catalog sizes takes the route's `defaultContextWindow` and `defaultMaxTokens` fallbacks.
+`reasoningEfforts` declares a model's selectable thinking levels: each key is a level selectors offer, its value the spelling dispatch sends on the wire, so `max: ultra` renames a level for a gateway with its own vocabulary. Omitting the field keeps the installed catalog entry's capability; `false` declares a non-reasoning model. `compat` switches reshape the request for endpoints pi-ai cannot recognize — which role carries the system prompt, which field caps output, how a thinking level travels — configurable per route and per model. With `sendSessionAffinityHeaders` set, a request carrying the loop's session id rides the transport headers `sessionAffinityFormat` spells — `openrouter` sends `x-session-id`; `openai` and `openai-nosession` send the `x-client-request-id` pair, the former adding `session_id` — model-hidden metadata a gateway can key on: absent on a request without a session id, dropped with the cache by a `cacheRetention: none` profile, and overridden by an explicit `headers` value on a name collision. A model neither the entry nor the installed catalog sizes takes the route's `defaultContextWindow` and `defaultMaxTokens` fallbacks.
 
 ### Change configuration at runtime
 

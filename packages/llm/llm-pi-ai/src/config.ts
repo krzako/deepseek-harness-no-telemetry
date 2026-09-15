@@ -27,6 +27,7 @@ import {
   MAX_TOKENS_FIELDS,
   MODALITIES,
   resolveRouteModels,
+  SESSION_AFFINITY_FORMATS,
   SUPPORTED_THINKING_FORMATS,
   THINKING_LEVELS,
 } from './catalog.ts'
@@ -263,6 +264,8 @@ const compatProfile: z<PiAiCompatProfile> = z.object({
   supportsThinkingTokenBudget: z.boolean(),
   supportsStrictMode: z.boolean(),
   cacheControlFormat: z.union(CACHE_CONTROL_FORMATS),
+  sendSessionAffinityHeaders: z.boolean(),
+  sessionAffinityFormat: z.union(SESSION_AFFINITY_FORMATS),
   supportsLongCacheRetention: z.boolean(),
   supportsEagerToolInputStreaming: z.boolean(),
   supportsCacheControlOnTools: z.boolean(),

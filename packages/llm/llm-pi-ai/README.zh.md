@@ -61,6 +61,8 @@ kind: "package-reference"
         baseURL: https://gateway.acme.example/v1
         compat:
           thinkingFormat: deepseek
+          sendSessionAffinityHeaders: true
+          sessionAffinityFormat: openrouter
         models:
           - id: acme-think
             name: Acme Think
@@ -98,7 +100,7 @@ profile 的 `models` 列表会替换而非扩展路由的已安装目录；每�
 
 ### 带推理与协议兼容运行
 
-`reasoningEfforts` 声明模型可选择的 thinking 等级：每个键都是选择器提供的等级，其值是该等级过线的拼写，因此 `max: ultra` 可以为拥有自有词汇的网关重命名等级。省略该字段时保留已安装目录条目的能力；`false` 声明非推理模型。对于 pi-ai 无法识别的端点，`compat` 开关重塑请求——哪个角色携带系统提示词、哪个字段限制输出、thinking 等级如何传递——可逐路由、逐模型配置。条目与已安装目录都没有尺寸的模型，会采用路由的 `defaultContextWindow` 与 `defaultMaxTokens` 回退值。
+`reasoningEfforts` 声明模型可选择的 thinking 等级：每个键都是选择器提供的等级，其值是该等级过线的拼写，因此 `max: ultra` 可以为拥有自有词汇的网关重命名等级。省略该字段时保留已安装目录条目的能力；`false` 声明非推理模型。对于 pi-ai 无法识别的端点，`compat` 开关重塑请求——哪个角色携带系统提示词、哪个字段限制输出、thinking 等级如何传递——可逐路由、逐模型配置。设置 sendSessionAffinityHeaders 后，携带 loop 会话 id 的请求会随行 sessionAffinityFormat 拼出的传输头——openrouter 发送 x-session-id；openai 与 openai-nosession 发送 x-client-request-id 一对头，前者另加 session_id——这是网关可作为键的模型不可见元数据：不带会话 id 的请求一概不发，cacheRetention: none 的 profile 把 id 连同缓存一起丢弃，同名冲突时显式 headers 值胜出。条目与已安装目录都没有尺寸的模型，会采用路由的 `defaultContextWindow` 与 `defaultMaxTokens` 回退值。
 
 ### 运行时更改配置
 
