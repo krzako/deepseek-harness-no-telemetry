@@ -1241,6 +1241,25 @@ export interface PiAiCompatProfile {
   /** Prompt-cache marker convention; `openai-completions`. */
   cacheControlFormat?: NonNullable<OpenAICompletionsCompat['cacheControlFormat']>
   /**
+   * Whether a request carrying a session id rides session-affinity transport
+   * headers, spelled by {@link sessionAffinityFormat}; `openai-completions`.
+   * The session id is the harness conversation's own `GenerateOptions`-level
+   * identity — a private gateway can key request routing or its own conversation
+   * records on it. A request without a session id sends no affinity header, and
+   * a profile naming `cacheRetention: none` sends none either, because pi-ai
+   * treats the id as prompt-cache state and drops it with the cache.
+   */
+  sendSessionAffinityHeaders?: boolean
+  /**
+   * Session-affinity header spellings; `openai-completions`, read only when
+   * {@link sendSessionAffinityHeaders} is set. `openrouter` sends
+   * `x-session-id`; `openai` sends `session_id` plus `x-client-request-id`
+   * and `x-session-affinity`; `openai-nosession` sends that pair without
+   * `session_id`. The prompt-cache `prompt_cache_key` body field is
+   * cache-retention business and follows its own rules, not this switch.
+   */
+  sessionAffinityFormat?: NonNullable<OpenAICompletionsCompat['sessionAffinityFormat']>
+  /**
    * Whether the endpoint accepts long prompt-cache retention;
    * `openai-completions`, the three Responses protocols, `anthropic-messages`.
    */
@@ -1278,7 +1297,7 @@ export type PiAiThinkingFormat = NonNullable<OpenAICompletionsCompat['thinkingFo
 
 依赖：`Api`（`@earendil-works/pi-ai`）· `CacheRetention`（`@earendil-works/pi-ai`）· `Model`（`@earendil-works/pi-ai`）· `ModelThinkingLevel`（`@earendil-works/pi-ai`）· `OpenAICompletionsCompat`（`@earendil-works/pi-ai`）· [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets`（`@earendil-works/pi-ai`）· `Transport`（`@earendil-works/pi-ai`)
 
-来源：[`packages/llm/llm-pi-ai/src/config.ts:213`](../packages/llm/llm-pi-ai/src/config.ts)
+来源：[`packages/llm/llm-pi-ai/src/config.ts:217`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 
@@ -1355,7 +1374,7 @@ export interface ReplayModelConfig {
 
 依赖：[`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-来源：[`packages/test-support/llm-replay/src/index.ts:1294`](../packages/test-support/llm-replay/src/index.ts)
+来源：[`packages/test-support/llm-replay/src/index.ts:1293`](../packages/test-support/llm-replay/src/index.ts)
 
 <a id="deepseek-aidsh-llm-retry"></a>
 

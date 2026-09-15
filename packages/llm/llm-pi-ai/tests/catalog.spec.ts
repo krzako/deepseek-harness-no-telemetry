@@ -779,6 +779,39 @@ describe('compat switches', () => {
     expect(models.get('dialect-odd')?.compat).toEqual({ thinkingFormat: 'openai', supportsReasoningEffort: false })
   })
 
+  it('offers the session-affinity switches to a hand-declared completions route', () => {
+    const models = modelsOf({
+      'acme-gateway': {
+        api: 'openai-completions',
+        baseURL: 'https://acme.test',
+        compat: { sendSessionAffinityHeaders: true, sessionAffinityFormat: 'openrouter' },
+        models: [
+          { id: 'acme-a' },
+          { id: 'acme-b', compat: { sessionAffinityFormat: 'openai-nosession' } },
+        ],
+      },
+    }, 'acme-gateway')
+
+    expect(models.get('acme-a')?.compat).toEqual({ sendSessionAffinityHeaders: true, sessionAffinityFormat: 'openrouter' })
+    expect(models.get('acme-b')?.compat).toEqual({ sendSessionAffinityHeaders: true, sessionAffinityFormat: 'openai-nosession' })
+  })
+
+  it('refuses an affinity switch on a model whose protocol does not take it', () => {
+    // The completions-only offer keeps anthropic and Responses models out:
+    // a switch they cannot read is refused where it is written, not dropped.
+    expect(() => resolveProfiles({
+      anthropic: {
+        models: [{ id: 'claude-sonnet-4-5', compat: { sendSessionAffinityHeaders: true } as never }],
+      },
+    })).toThrow(/its api is "anthropic-messages", which does not take it.*exists on openai-completions/s)
+  })
+
+  it('refuses a route affinity switch no model on the route can take', () => {
+    expect(() => resolveProfiles({
+      anthropic: { compat: { sendSessionAffinityHeaders: true } as never },
+    })).toThrow(/no model on the route speaks a protocol that takes it.*exists on openai-completions/s)
+  })
+
   it('merges the switches over the catalog entry’s own compat instead of replacing it', () => {
     const [catalogModel] = getBuiltinModels('deepseek')
     if (catalogModel === undefined) throw new Error('the installed catalog ships no deepseek model')

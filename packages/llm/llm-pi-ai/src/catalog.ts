@@ -136,6 +136,19 @@ const CACHE_CONTROL_FORMAT_GATE: Record<PiAiCacheControlFormat, true> = {
 /** The prompt-cache marker conventions a profile may name. */
 export const CACHE_CONTROL_FORMATS = Object.keys(CACHE_CONTROL_FORMAT_GATE) as readonly PiAiCacheControlFormat[]
 
+/** The session-affinity header spellings pi-ai accepts. */
+export type PiAiSessionAffinityFormat = NonNullable<OpenAICompletionsCompat['sessionAffinityFormat']>
+
+/** Drift gate over {@link PiAiSessionAffinityFormat}; a new upstream spelling fails compilation until named. */
+const SESSION_AFFINITY_FORMAT_GATE: Record<PiAiSessionAffinityFormat, true> = {
+  'openai': true,
+  'openai-nosession': true,
+  'openrouter': true,
+}
+
+/** Session-affinity header spellings a profile may name. */
+export const SESSION_AFFINITY_FORMATS = Object.keys(SESSION_AFFINITY_FORMAT_GATE) as readonly PiAiSessionAffinityFormat[]
+
 /** The request-state placeholders a `chat_template_kwargs` value may name. */
 export type PiAiChatTemplateVar = Extract<ChatTemplateKwargValue, { $var: string }>['$var']
 
@@ -236,9 +249,9 @@ const COMPLETIONS_COMPAT_GATE = {
   vercelGatewayRouting: 'withhold',
   zaiToolStream: 'withhold',
   supportsOpenAIGrammarTools: 'withhold',
-  sendSessionAffinityHeaders: 'withhold',
+  sendSessionAffinityHeaders: 'offer',
   deferredToolsMode: 'withhold',
-  sessionAffinityFormat: 'withhold',
+  sessionAffinityFormat: 'offer',
 } as const satisfies Record<keyof OpenAICompletionsCompat, CompatDisposition>
 
 /** Disposition of every `OpenAIResponsesCompat` field; a drift gate like the one above. */
@@ -386,6 +399,25 @@ export interface PiAiCompatProfile {
   supportsStrictMode?: boolean
   /** Prompt-cache marker convention; `openai-completions`. */
   cacheControlFormat?: NonNullable<OpenAICompletionsCompat['cacheControlFormat']>
+  /**
+   * Whether a request carrying a session id rides session-affinity transport
+   * headers, spelled by {@link sessionAffinityFormat}; `openai-completions`.
+   * The session id is the harness conversation's own `GenerateOptions`-level
+   * identity — a private gateway can key request routing or its own conversation
+   * records on it. A request without a session id sends no affinity header, and
+   * a profile naming `cacheRetention: none` sends none either, because pi-ai
+   * treats the id as prompt-cache state and drops it with the cache.
+   */
+  sendSessionAffinityHeaders?: boolean
+  /**
+   * Session-affinity header spellings; `openai-completions`, read only when
+   * {@link sendSessionAffinityHeaders} is set. `openrouter` sends
+   * `x-session-id`; `openai` sends `session_id` plus `x-client-request-id`
+   * and `x-session-affinity`; `openai-nosession` sends that pair without
+   * `session_id`. The prompt-cache `prompt_cache_key` body field is
+   * cache-retention business and follows its own rules, not this switch.
+   */
+  sessionAffinityFormat?: NonNullable<OpenAICompletionsCompat['sessionAffinityFormat']>
   /**
    * Whether the endpoint accepts long prompt-cache retention;
    * `openai-completions`, the three Responses protocols, `anthropic-messages`.
