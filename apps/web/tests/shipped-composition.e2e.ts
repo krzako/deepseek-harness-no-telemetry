@@ -55,7 +55,6 @@ const EXPECTED_TOOLS = [
   'todo_write',
   'update_goal',
   'web_fetch',
-  'web_search',
   'workflow',
   'write',
 ]

@@ -363,12 +363,6 @@ export interface LaunchOptions {
    * credential reference. Browser search scenarios keep the real provider and
    * credentials seam while avoiding external search traffic and ambient keys.
    */
-  deepSeekSearch?: {
-    /** Anthropic-compatible base URL; the provider appends `/messages`. */
-    baseURL: string
-    /** Credential reference resolved by the shipped search provider. */
-    apiKeyEnv: string
-  }
   /**
    * Replace the roster row the scaffold pins by default (no configured roots,
    * default `standard` — the plugin's own shipped presets). Supply this only
@@ -608,15 +602,6 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         { id: 'tool-cordis', name: '@deepseek-ai/dsh-tool-cordis' },
       ] }]
       : [],
-    ...options.deepSeekSearch === undefined
-      ? []
-      : [{
-        id: 'web-search-deepseek',
-        config: {
-          apiKeyEnv: options.deepSeekSearch.apiKeyEnv,
-          baseURL: options.deepSeekSearch.baseURL,
-        },
-      }],
     ...mode === 'record' || options.deepSeekMissingCredential === true
       ? []
       : [{ id: 'llm-deepseek', disabled: true }],
@@ -954,9 +939,6 @@ export function normalizeWebSessionVolatiles(log: string, workspaceCwd?: string)
       for (const cwd of cwdSpellings) normalized = replaceWebCwd(normalized, cwd)
       return normalized
     }) as { type?: unknown; data?: { endpoint?: unknown } }
-    if (record.type === 'web/deepseek-search-llm-request' && typeof record.data?.endpoint === 'string') {
-      record.data.endpoint = '{{webSearchEndpoint}}'
-    }
     return JSON.stringify(record)
   }).join('\n')
 }

@@ -39,7 +39,7 @@ kind: "package-reference"
 - name: '@deepseek-ai/dsh-tool-call-timeout-policy'
 ```
 
-限时在配置工具的位置设置。例如，`dsh-tool-web` 的 `fetchTimeoutMs`／`searchTimeoutMs` 设置（默认 30,000 ms）把限时放到 `web_fetch` 与 `web_search` 上。没有限时的工具——随附的 `bash`、`read`、`write`、`edit`——绝不会被切断。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-web)列出会产生限时的工具设置。
+限时在配置工具的位置设置。例如，`dsh-tool-web` 的 `fetchTimeoutMs` 设置（默认 30,000 ms）限制 `web_fetch`。没有限时的工具——随附的 `bash`、`read`、`write`、`edit`——绝不会被切断。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-web)列出会产生限时的工具设置。
 
 ### 你会得到什么
 

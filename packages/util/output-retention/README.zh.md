@@ -86,7 +86,6 @@ const footer = formatRetentionNotice(
 | `grep` | `ItemRetainer`，`head` | spill 文件收集、逐匹配预览截断、分组、排序 |
 | `bash` | `TextRetainer`，`tail` 或 `headTail` | spill 文件、退出状态、信号、超时、后台任务 |
 | `web_fetch` | `TextRetainer`，`head` 或 `headTail` | 提供方与资源上限、错误状态 |
-| `web_search` | `ItemRetainer`，`head` | 「来源已达上限」通知措辞与提供方事实 |
 
 `read` 不属于本库：它的行窗口分页（`offset`/`limit`、行号、`totalLines`）是文件专属渲染器，单个省略计数无法表示该窗口的两侧。
 

@@ -3015,26 +3015,16 @@ export interface Config {
 需要：`tools` · `web` · `systemPrompt`
 
 ```ts config-catalog
-/** Plugin config: which web tools to register, search bounds, per-tool budgets, and the fetch output cap. */
+/** Plugin config for the fetch timeout and output cap. */
 export interface Config {
-  /** Register `web_search`. Defaults to true. */
-  search?: boolean
-  /** Register `web_fetch`. Defaults to true. */
-  fetch?: boolean
-  /** Upper bound on sources returned by one `web_search` call. */
-  searchMaxResults?: number
-  /** Upper bound on queries accepted by one `web_search` call. */
-  searchMaxQueries?: number
   /** Cooperative timeout budget (ms) for `web_fetch`. Defaults to 30000. */
   fetchTimeoutMs?: number
-  /** Cooperative timeout budget (ms) for `web_search`. Defaults to 30000. */
-  searchTimeoutMs?: number
   /** Cap on source characters converted and complete `web_fetch` output characters. Defaults to 200000. */
   fetchMaxOutputChars?: number
 }
 ```
 
-来源：[`packages/web/tool-web/src/index.ts:37`](../packages/web/tool-web/src/index.ts)
+来源：[`packages/web/tool-web/src/index.ts:34`](../packages/web/tool-web/src/index.ts)
 
 <a id="deepseek-aidsh-tool-workflow"></a>
 
@@ -3143,20 +3133,16 @@ export type ApprovalPolicy = 'ask' | 'never'
 
 ```ts config-catalog
 /**
- * Config for the web seam. `searchProvider` / `fetchProvider` pin which provider
- * wins for each capability; both are optional (a single registered usable
- * provider auto-selects). Operational overrides such as environment variables
- * must feed these same fields rather than introduce a hidden priority chain.
+ * Config for fetch provider selection. One usable provider auto-selects when
+ * no id is configured; `DSH_WEB_FETCH_PROVIDER` supplies the same field.
  */
 export interface WebRuntimeConfig {
-  /** Explicit search provider id. Omitted = auto-select when exactly one usable. */
-  readonly searchProvider?: string
   /** Explicit fetch provider id. Omitted = auto-select when exactly one usable. */
   readonly fetchProvider?: string
 }
 ```
 
-来源：[`packages/web/web/src/index.ts:55`](../packages/web/web/src/index.ts)
+来源：[`packages/web/web/src/index.ts:45`](../packages/web/web/src/index.ts)
 
 <a id="deepseek-aidsh-web-app"></a>
 
@@ -3208,82 +3194,6 @@ export interface Config {
 ```
 
 来源：[`packages/web/web-fetch-http/src/index.ts:32`](../packages/web/web-fetch-http/src/index.ts)
-
-<a id="deepseek-aidsh-web-search-deepseek"></a>
-
-## `@deepseek-ai/dsh-web-search-deepseek`
-
-需要：`web`
-
-```ts config-catalog
-/** Plugin config (all optional — `apply` fills env-var and constant defaults). */
-export interface Config {
-  /** Literal DeepSeek API key; prefer {@link apiKeyEnv} so no secret enters configuration files. */
-  apiKey?: string
-  /** Credential reference resolved for each search; defaults to `DEEPSEEK_API_KEY`. */
-  apiKeyEnv?: string
-  /** Anthropic-compatible endpoint base; `/messages` is appended. */
-  baseURL?: string
-  /** Anthropic-format model name. Defaults to `deepseek-v4-flash`. */
-  model?: string
-  /** `anthropic-version` header value. Defaults to `2023-06-01`. */
-  apiVersion?: string
-  /** Upper bound on generated tokens for the Messages request. Defaults to 4096. */
-  maxTokens?: number
-  /** Maximum `web_search` server-tool uses per request. Defaults to 5. */
-  maxUses?: number
-}
-```
-
-来源：[`packages/web/web-search-deepseek/src/index.ts:46`](../packages/web/web-search-deepseek/src/index.ts)
-
-<a id="deepseek-aidsh-web-search-exa"></a>
-
-## `@deepseek-ai/dsh-web-search-exa`
-
-需要：`web`
-
-```ts config-catalog
-/** Plugin config (all optional — `apply` fills env-var and constant defaults). */
-export interface Config {
-  /** Exa API key. Falls back to `$EXA_API_KEY`. Empty → provider unavailable. */
-  apiKey?: string
-  /** Endpoint base; `/search` is appended. Defaults to the public API. */
-  baseURL?: string
-  /** Retrieval mode sent as Exa's `type`. Defaults to `auto`. */
-  searchType?: 'auto' | 'keyword' | 'neural'
-  /** Default result count when a request carries no `maxResults`. Omitted = none. */
-  numResults?: number
-  /** Highlight sentences requested per result. Defaults to 1. */
-  highlightsPerResult?: number
-}
-```
-
-来源：[`packages/web/web-search-exa/src/index.ts:35`](../packages/web/web-search-exa/src/index.ts)
-
-<a id="deepseek-aidsh-web-search-perplexity"></a>
-
-## `@deepseek-ai/dsh-web-search-perplexity`
-
-需要：`web`
-
-```ts config-catalog
-/** Plugin config (all optional — `apply` fills env-var and constant defaults). */
-export interface Config {
-  /** Perplexity API key. Falls back to `$PERPLEXITY_API_KEY`. Empty → unavailable. */
-  apiKey?: string
-  /** Endpoint base; `/chat/completions` is appended. Defaults to the public API. */
-  baseURL?: string
-  /** Search model name. Defaults to `sonar`. */
-  model?: string
-  /** Upper bound on generated answer tokens. Defaults to 1024. */
-  maxTokens?: number
-  /** Recency window sent as `search_recency_filter`. Omitted = no filter. */
-  searchRecency?: 'day' | 'week' | 'month' | 'year'
-}
-```
-
-来源：[`packages/web/web-search-perplexity/src/index.ts:30`](../packages/web/web-search-perplexity/src/index.ts)
 
 <a id="deepseek-aidsh-webhook-github"></a>
 

@@ -8,8 +8,7 @@
 // - artifacts: seven produced files (chips overflow into the "+N" remainder
 //   and the show-in-folder affordance) with a failed write excluded
 // - tool rows: write/edit/str_replace_editor/read file links, a failure row
-//   without one, and — expanded — the web-search source links (one non-http
-//   source stays inert) and answer link, the web-fetch URL, the read card's
+//   without one, and — expanded — the web-fetch URL, the read card's
 //   inert path label and fold toggle, the diff card's inert path header, the
 //   grep card's fold-only file headers, a failing bash card's exit status, and
 //   a generic tool card's IN/OUT surfaces.
@@ -50,8 +49,6 @@ const GUIDE_URL = 'https://docs.example.test/guide'
 const API_URL = 'https://docs.example.test/api'
 const RELEASES_URL = 'https://docs.example.test/releases'
 const MAILTO_URL = 'mailto:owner@example.test'
-const SOURCE_URL = 'https://docs.example.test/links'
-const INERT_SOURCE_URL = 'ftp://mirror.example.test/spec'
 const FETCH_URL = 'https://docs.example.test/tokens'
 
 /** One-part text content for a built message. */
@@ -158,19 +155,6 @@ const CALLS: GalleryCall[] = [
     name: 'bash',
     args: { command: 'pnpm run lint', description: 'Run the lint gate', workdir: 'site' },
     result: 'style.css: unexpected hex literal\n[exit code: 1]',
-  },
-  {
-    name: 'web_search',
-    args: { queries: ['clickable link styles', 'produced files ui'] },
-    result: 'Two sources found.',
-    meta: {
-      truncated: false,
-      answer: `Unify links per [the guide](${GUIDE_URL}).`,
-      sources: [
-        { url: SOURCE_URL, title: 'Link styles reference', snippet: 'One cursor token, one focus ring.' },
-        { url: INERT_SOURCE_URL, title: 'Mirror spec (non-http)', snippet: 'A non-http source renders inert.' },
-      ],
-    },
   },
   {
     name: 'web_fetch',
@@ -363,7 +347,6 @@ describe('web e2e: clickable links gallery', () => {
     // Host's opener.
     await page.getByRole('button', { name: `${String(CALLS.length)} tool calls` }).click()
     for (const row of [
-      /^Search clickable link styles/,
       /^Fetch /,
       /^Read docs\/guide\.md/,
       /^Edit src\/tokens\.css/,
@@ -383,11 +366,8 @@ describe('web e2e: clickable links gallery', () => {
       const box = await toggle.boundingBox()
       await toggle.click(box === null ? {} : { position: { x: box.width - 8, y: box.height / 2 } })
     }
-    const sourceLink = page.locator(`a[href="${SOURCE_URL}"]`)
-    await expect.poll(() => sourceLink.count(), { timeout: 10_000 }).toBe(1)
-    expect(await page.locator('a[href^="ftp:"]').count()).toBe(0)
     expect(await page.locator(`a[href="${FETCH_URL}"]`).count()).toBe(1)
-    expect(await page.locator(`a[href="${GUIDE_URL}"]`).count()).toBe(2)
+    expect(await page.locator(`a[href="${GUIDE_URL}"]`).count()).toBe(1)
 
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
@@ -409,7 +389,6 @@ describe('web e2e: clickable links gallery', () => {
     for (const [name, link] of [
       ['markdown anchor', guideLink],
       ['file mention', mentions.first()],
-      ['search source', sourceLink.first()],
       ['fetch url', page.locator(`a[href="${FETCH_URL}"]`).first()],
       ['produced chip', chip],
     ] as const) {

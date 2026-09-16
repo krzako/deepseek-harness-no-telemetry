@@ -1,6 +1,5 @@
 /**
- * Service Definition for the web access capability seam (`ctx.web`): registries and provider-selecting execution for search and
- * fetch. Duplicate ids are rejected. At execution time, a configured provider must exist and
+ * Service Definition for the web fetch capability (`ctx.web`). Duplicate ids are rejected. At execution time, a configured provider must exist and
  * be usable; without one, exactly one usable provider is required, so selection never depends
  * on registration order.
  * @module @deepseek-ai/dsh-web
@@ -12,9 +11,6 @@ import type {
   WebFetchProvider,
   WebFetchRequest,
   WebFetchResult,
-  WebSearchProvider,
-  WebSearchRequest,
-  WebSearchResult,
 } from './types.ts'
 import { WebError } from './types.ts'
 
@@ -26,10 +22,6 @@ export type {
   WebFetchProvider,
   WebFetchRequest,
   WebFetchResult,
-  WebSearchProvider,
-  WebSearchRequest,
-  WebSearchResult,
-  WebSearchSource,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -47,14 +39,10 @@ interface Selection<P> {
 }
 
 /**
- * Config for the web seam. `searchProvider` / `fetchProvider` pin which provider
- * wins for each capability; both are optional (a single registered usable
- * provider auto-selects). Operational overrides such as environment variables
- * must feed these same fields rather than introduce a hidden priority chain.
+ * Config for fetch provider selection. One usable provider auto-selects when
+ * no id is configured; `DSH_WEB_FETCH_PROVIDER` supplies the same field.
  */
 export interface WebRuntimeConfig {
-  /** Explicit search provider id. Omitted = auto-select when exactly one usable. */
-  readonly searchProvider?: string
   /** Explicit fetch provider id. Omitted = auto-select when exactly one usable. */
   readonly fetchProvider?: string
 }
@@ -74,34 +62,18 @@ export interface WebRuntimeConfig {
 export class WebRuntime extends Service {
   /**
    * Provider selection config. Operational env overrides feed the SAME fields:
-   * `$DSH_WEB_SEARCH_PROVIDER` / `$DSH_WEB_FETCH_PROVIDER` are equivalent to
-   * `searchProvider` / `fetchProvider` and are NOT a hidden priority chain.
+   * `$DSH_WEB_FETCH_PROVIDER` is equivalent to `fetchProvider`.
    */
   static Config: z<WebRuntimeConfig> = z.object({
-    searchProvider: z.string(),
     fetchProvider: z.string(),
   })
 
-  private searchProviders = new Map<string, WebSearchProvider>()
   private fetchProviders = new Map<string, WebFetchProvider>()
-  private readonly searchProviderId: string | undefined
   private readonly fetchProviderId: string | undefined
 
   constructor(ctx: Context, config: WebRuntimeConfig = {}) {
     super(ctx, 'web')
-    this.searchProviderId = config.searchProvider ?? process.env.DSH_WEB_SEARCH_PROVIDER
     this.fetchProviderId = config.fetchProvider ?? process.env.DSH_WEB_FETCH_PROVIDER
-  }
-
-  /**
-   * Register a search provider. Throws {@link WebError} `WEB_DUPLICATE_PROVIDER`
-   * if its id is already registered for search. Returns a disposer; disposed
-   * with the calling fiber.
-   * @param provider - the provider; its `id` is the registry key.
-   * @returns the disposer that unregisters the provider.
-   */
-  registerSearchProvider(provider: WebSearchProvider): () => void {
-    return this.registerProvider(this.searchProviders, provider)
   }
 
   /**
@@ -126,24 +98,6 @@ export class WebRuntime extends Service {
     // ctx.effect's disposer returns Promise<void>; our disposer API is
     // synchronous fire-and-forget — discard the (always-resolved) promise.
     return () => void dispose()
-  }
-
-  /**
-   * Run one search through the selected provider. Resolves the provider at call
-   * time with the selection rules above; throws {@link WebError} when the
-   * capability cannot run. The seam enforces `request.maxResults` on the result:
-   * if the provider over-returns, `sources[]` is truncated and `truncated` set.
-   * @param request - the query and optional result limit.
-   * @param signal - optional cancellation signal forwarded to the provider.
-   * @returns the provider's results, capped to `request.maxResults`.
-   */
-  async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
-    const provider = resolveProvider({
-      providers: this.searchProviders,
-      ...this.searchProviderId !== undefined ? { configuredId: this.searchProviderId } : {},
-    })
-    const result = await provider.search(request, signal)
-    return capSources(result, request.maxResults)
   }
 
   /**
@@ -191,12 +145,6 @@ function resolveProvider<P extends ResolvableProvider>(selection: Selection<P>):
     throw new WebError(`multiple usable web providers are registered (${ids}); configure one explicitly`, 'WEB_PROVIDER_AMBIGUOUS')
   }
   return single
-}
-
-/** Enforce `maxResults` on a search result: truncate `sources[]` and flag it. */
-function capSources(result: WebSearchResult, maxResults: number | undefined): WebSearchResult {
-  if (maxResults === undefined || result.sources.length <= maxResults) return result
-  return { ...result, sources: result.sources.slice(0, maxResults), truncated: true }
 }
 
 export default WebRuntime
