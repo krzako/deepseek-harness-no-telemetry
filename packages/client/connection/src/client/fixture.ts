@@ -560,33 +560,6 @@ const READ_SAMPLE_TEXT = [
   '</content>',
 ].join('\n')
 
-/**
- * The `web_search` result metadata for the web-search turn. The sources cover a
- * titled source with a snippet and date, a hostname-label fallback, and a
- * titled source without a snippet; `truncated` exercises the capped indicator.
- */
-const WEB_SEARCH_META = {
-  answer: 'DeepSeek Harness is a plugin-based agent harness on vendored Cordis where **every capability is a plugin**.',
-  sources: [
-    {
-      url: 'https://github.com/deepseek-ai/deepseek-harness',
-      title: 'DeepSeek Harness — plugin-based agent harness',
-      snippet: 'Everything is a plugin: session, tools, agent-loop, and LLM adapters all mount on the same Cordis context.',
-      publishedAt: '2026-07-01',
-    },
-    {
-      url: 'https://www.deepseek.com/blog/harness-architecture',
-      snippet: 'The capability-seam pattern splits each capability into interface, implementation, and consumer packages.',
-    },
-    {
-      url: 'https://docs.deepseek.com/harness/plugins',
-      title: 'Writing a harness plugin',
-      publishedAt: '2026-06-15',
-    },
-  ],
-  truncated: true,
-} satisfies JsonValue
-
 /** The `web_fetch` result metadata for the web-fetch turn. */
 const WEB_FETCH_META = {
   url: 'https://www.deepseek.com/blog/harness-architecture',
@@ -941,15 +914,7 @@ function buildAlphaLog(): SessionEvent[] {
     },
   )
 
-  // Turns 70-71 carry the web tools' result metadata. They stay before the todo
-  // turn because a later turn/start retires the standing plan projection.
-  toolTurn(
-    70,
-    'web_search',
-    '{"queries":["deepseek harness architecture"]}',
-    'Search results for deepseek harness architecture.',
-    WEB_SEARCH_META,
-  )
+  // A fetched URL carries structured result metadata.
   toolTurn(
     71,
     'web_fetch',
@@ -1935,7 +1900,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
    */
   const fixturePresets = new Map<string, { trust: 'system' | 'user'; content: string }>([
     ['standard', { trust: 'system', content: "- id: tool-bash\n  name: '@deepseek-ai/dsh-tool-bash'\n" }],
-    ['minimal', { trust: 'system', content: "- id: tool-web-search\n  name: '@deepseek-ai/dsh-tool-web-search'\n" }],
+    ['minimal', { trust: 'system', content: "- id: tool-web\n  name: '@deepseek-ai/dsh-tool-web'\n" }],
     ['my-agent', { trust: 'user', content: "- id: tool-read\n  name: '@deepseek-ai/dsh-tool-read'\n" }],
   ])
   let fixtureDefaultPreset = 'standard'

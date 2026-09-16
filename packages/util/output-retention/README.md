@@ -86,7 +86,6 @@ The library standardizes the omission clause (`Omitted 3 items.`) and joins it w
 | `grep` | `ItemRetainer`, `head` | Spill-file collection, per-match preview truncation, grouping, sorting |
 | `bash` | `TextRetainer`, `tail` or `headTail` | Spill files, exit status, signal, timeout, background jobs |
 | `web_fetch` | `TextRetainer`, `head` or `headTail` | Provider and resource caps, error states |
-| `web_search` | `ItemRetainer`, `head` | The "sources capped" notice wording and provider facts |
 
 `read` stays outside this library: its line-window pagination (`offset`/`limit`, line numbers, `totalLines`) is a file-specific renderer that a single omission count cannot represent.
 

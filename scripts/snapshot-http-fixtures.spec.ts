@@ -8,17 +8,7 @@ vi.mock('node:http', () => ({ createServer: httpMock.createServer }))
 
 // Snapshot plugins are plain runtime JavaScript loaded by cordis.yml.
 // @ts-expect-error The fixture intentionally has no declaration artifact.
-import * as searchFixtureModule from '../snapshots/session/web-search-endpoint-guidance/web-search-error-fixture.mjs'
-// @ts-expect-error The fixture intentionally has no declaration artifact.
 import * as loopbackFixtureModule from '../snapshots/session/loopback-fixture-server.mjs'
-
-const RECORDED_ENDPOINT = 'http://127.0.0.1:43118/anthropic/v1/messages'
-
-interface FixturePlugin {
-  readonly name: string
-  readonly inject?: readonly string[]
-  apply(ctx: Context): Promise<void>
-}
 
 interface LoopbackFixtureOptions {
   readonly label: string
@@ -27,7 +17,6 @@ interface LoopbackFixtureOptions {
   readonly requestListener: () => void
 }
 
-const searchFixture = searchFixtureModule as unknown as FixturePlugin
 const typedLoopbackFixtureModule = loopbackFixtureModule as unknown as {
   readonly applyLoopbackServerEffect: (ctx: Context, options: LoopbackFixtureOptions) => Promise<void>
 }
@@ -105,18 +94,6 @@ afterEach(() => {
 })
 
 describe('snapshot HTTP fixture lifecycle', () => {
-  it('joins search listener setup and cleanup when disposal wins the startup race', async () => {
-    const server = nextServer()
-    const ctx = new Context()
-    const errors = captureErrors(ctx)
-    const fiber = ctx.plugin(searchFixture)
-    await disposeWhileStarting(fiber, server)
-
-    expect(server).toMatchObject({ closed: true, connectionsClosed: true, unreferenced: true })
-    expect(globalThis.fetch).toBe(nativeFetch)
-    expect(errors).toEqual([])
-  })
-
   it('runs owner cleanup and closes the listener when disposal wins the startup race', async () => {
     const server = nextServer()
     const ctx = new Context()
@@ -140,64 +117,4 @@ describe('snapshot HTTP fixture lifecycle', () => {
     expect(errors).toEqual([])
   })
 
-  it('maps every fetch input form and rejects another path on the recorded authority', async () => {
-    const server = nextServer()
-    const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response('{}'))
-    globalThis.fetch = fetchMock
-    const ctx = new Context()
-    const fiber = ctx.plugin(searchFixture)
-    await server.started.promise
-    server.finishListening(54322)
-    await fiber
-
-    try {
-      await globalThis.fetch(RECORDED_ENDPOINT)
-      expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://127.0.0.1:54322/anthropic/v1/messages')
-
-      await globalThis.fetch(new URL(RECORDED_ENDPOINT))
-      expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://127.0.0.1:54322/anthropic/v1/messages')
-
-      const request = new Request(RECORDED_ENDPOINT, { method: 'POST', headers: { 'x-fixture': 'request' } })
-      await globalThis.fetch(request)
-      const mappedRequest = fetchMock.mock.calls.at(-1)?.[0]
-      expect(mappedRequest).toBeInstanceOf(Request)
-      if (!(mappedRequest instanceof Request)) throw new TypeError('mapped fetch input must be a Request')
-      expect(mappedRequest.url).toBe('http://127.0.0.1:54322/anthropic/v1/messages')
-      expect(mappedRequest.method).toBe('POST')
-      expect(mappedRequest.headers.get('x-fixture')).toBe('request')
-
-      const unrelated = new URL('https://example.test/')
-      await globalThis.fetch(unrelated)
-      expect(fetchMock.mock.calls.at(-1)?.[0]).toBe(unrelated)
-
-      await expect(globalThis.fetch('http://127.0.0.1:43118/unexpected'))
-        .rejects.toThrow('web-search-error-fixture: unexpected URL for recorded authority')
-    } finally {
-      await fiber.dispose()
-    }
-
-    expect(globalThis.fetch).toBe(fetchMock)
-    expect(server.closed).toBe(true)
-  })
-
-  it('preserves a later fetch wrapper while still closing the listener and reporting the ownership error', async () => {
-    const server = nextServer()
-    const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response('{}'))
-    globalThis.fetch = fetchMock
-    const ctx = new Context()
-    const errors = captureErrors(ctx)
-    const fiber = ctx.plugin(searchFixture)
-    await server.started.promise
-    server.finishListening()
-    await fiber
-
-    const fixtureFetch = globalThis.fetch
-    const laterFetch = vi.fn((input: string | URL | Request, init?: RequestInit) => fixtureFetch(input, init))
-    globalThis.fetch = laterFetch
-    await fiber.dispose()
-
-    expect(globalThis.fetch).toBe(laterFetch)
-    expect(server).toMatchObject({ closed: true, connectionsClosed: true })
-    expect(errors.map(String).join('\n')).toContain('web-search-error-fixture: global fetch owner changed before cleanup')
-  })
 })

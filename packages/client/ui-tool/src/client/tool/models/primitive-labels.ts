@@ -89,10 +89,7 @@ export function searchBlockLabels(t: T): SearchBlockLabels {
  */
 export function webBlockLabels(t: T): WebBlockLabels {
   return {
-    noResults: t('web.noResults'),
-    sourcesTruncated: t('web.sourcesTruncated'),
     http: t('web.http'),
     contentTruncated: t('web.contentTruncated'),
-    markdown: markdownLabels(t),
   }
 }

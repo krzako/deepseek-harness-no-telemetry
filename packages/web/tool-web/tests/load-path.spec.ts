@@ -35,7 +35,7 @@ describe('dsh-tool-web real-load-path guard', () => {
     const unwrapped = loader.unwrapExports(toolWeb) as Parameters<Context['plugin']>[0]
     // Mounting the collapsed shape would throw for missing injection here.
     const fiber = await ctx.plugin(unwrapped)
-    expect(ctx.tools.schemas().map(s => s.name)).toEqual(expect.arrayContaining(['web_search', 'web_fetch']))
+    expect(ctx.tools.schemas().map(s => s.name)).toEqual(expect.arrayContaining(['web_fetch']))
     await fiber.dispose()
   })
 })

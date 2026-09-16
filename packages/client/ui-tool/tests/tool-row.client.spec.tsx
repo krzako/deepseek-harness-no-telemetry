@@ -37,7 +37,6 @@ describe('tool-call-model', () => {
     expect(classifyTool('pwsh')).toBe('bash')
     expect(classifyTool('read')).toBe('read')
     expect(classifyTool('web_fetch')).toBe('read')
-    expect(classifyTool('web_search')).toBe('search')
     expect(classifyTool('grep')).toBe('search')
     expect(classifyTool('write')).toBe('write')
     expect(classifyTool('edit')).toBe('edit')
@@ -111,13 +110,6 @@ describe('tool-call-model', () => {
     expect(toolRowModel('x', running({ argsRaw: 'not json' })).summary).toBe('x · not json')
     expect(toolRowModel('x', running({ argsRaw: '' })).summary).toBe('x · c1')
     expect(toolRowModel('', running({ argsRaw: '' })).summary).toBe('c1')
-  })
-
-  it('joins multi-query web search arguments in the summary', () => {
-    expect(toolRowModel('web_search', running({
-      name: 'web_search',
-      argsRaw: '{"queries":["first query","second\\nquery"]}',
-    })).summary).toBe('first query, second')
   })
 
   it('exposes filePath for path/file_path args and skips URL-only reads', () => {

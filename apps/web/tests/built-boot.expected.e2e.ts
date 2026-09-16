@@ -134,23 +134,16 @@ it('boots the built plugin graph and renders a fixture session end to end', asyn
   const footers = diffCards.map(card => card.textContent ?? '')
   expect(footers.some(text => text.includes('hello fixture') && text.includes('+1 -0 · 1 file'))).toBe(true)
 
-  // The web render intent reaches the assembled boot graph: the fixture's
-  // web_search / web_fetch turns render their keyed WebRow cards, proving the
-  // registration, wire projection, and card rendering survive the real bundle
-  // path (not just the per-package src benches). WebRow composes ToolRow, so the
-  // card is collapsed behind the row; the keyed row is pinned by its `data-tool`
-  // (ToolRow sets it from the wire tool name).
-  const webSearchRow = await waitFor(() => {
-    const row = document.querySelector('[data-tool="web_search"]')
+  // The fetch result reaches its keyed WebRow through the assembled app.
+  const webFetchRow = await waitFor(() => {
+    const row = document.querySelector('[data-tool="web_fetch"]')
     expect(row).not.toBeNull()
-    expect(document.querySelector('[data-tool="web_fetch"]')).not.toBeNull()
     return row!
   }, { timeout: 10_000 })
-  // Expand the web_search row to prove its WebBlock card renders end to end.
-  const webToggle = webSearchRow.querySelector('[data-expandable]')
+  const webToggle = webFetchRow.querySelector('[data-expandable]')
   if (webToggle !== null) act(() => { fireEvent.click(webToggle) })
   await waitFor(() => {
-    expect(webSearchRow.querySelector('[data-web]')).not.toBeNull()
+    expect(webFetchRow.querySelector('[data-web]')).not.toBeNull()
   }, { timeout: 10_000 })
 
   // Every bundle injected its plugin-owned style tag (the loader's CSS path).

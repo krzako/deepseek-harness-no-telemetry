@@ -10,8 +10,8 @@
 - text: "Assemble the link gallery: write the report and styles, inspect the sources, and summarize. {{clock}}"
 - button "Copy":
   - img
-- button "16 tool calls" [expanded]:
-  - text: 16 tool calls
+- button "15 tool calls" [expanded]:
+  - text: 15 tool calls
   - img
 - button "Write site/report.html +1 -0":
   - img
@@ -95,21 +95,6 @@
 - text: Failed site pnpm run lint exit code 1
 - button "Copy"
 - text: "style.css: unexpected hex literal"
-- button "Inspect"
-- button "Search clickable link styles, produced files ui" [expanded]:
-  - img
-  - text: Search clickable link styles, produced files ui
-- paragraph:
-  - text: Unify links per
-  - link "the guide":
-    - /url: https://docs.example.test/guide
-  - text: .
-- list:
-  - listitem:
-    - link "Link styles reference":
-      - /url: https://docs.example.test/links
-    - text: One cursor token, one focus ring.
-  - listitem: Mirror spec (non-http) A non-http source renders inert.
 - button "Inspect"
 - button "Fetch https://docs.example.test/tokens" [expanded]:
   - img

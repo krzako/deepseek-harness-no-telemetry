@@ -477,11 +477,10 @@ describe('dsh web keyless CLI smoke', () => {
         }
       `)
       expect(captured.tools?.map(tool => tool.function?.name)
-        .filter(name => name === 'web_search' || name === 'web_fetch'))
+        .filter(name => name === 'web_fetch'))
         .toMatchInlineSnapshot(`
           [
             "web_fetch",
-            "web_search",
           ]
         `)
     } finally {

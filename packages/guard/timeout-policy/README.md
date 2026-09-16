@@ -39,7 +39,7 @@ Mount the plugin with no configuration:
 - name: '@deepseek-ai/dsh-tool-call-timeout-policy'
 ```
 
-The limit is set where the tool is configured. For example, `dsh-tool-web`'s `fetchTimeoutMs`/`searchTimeoutMs` settings (default 30,000 ms) put the limit on `web_fetch` and `web_search`. Tools without a limit — the shipped `bash`, `read`, `write`, and `edit` — are never cut off. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-web) lists the tool settings that produce limits.
+The limit is set where the tool is configured. For example, `dsh-tool-web`'s `fetchTimeoutMs` setting (default 30,000 ms) limits `web_fetch`. Tools without a limit — the shipped `bash`, `read`, `write`, and `edit` — are never cut off. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-web) lists the tool settings that produce limits.
 
 ### What you get
 
