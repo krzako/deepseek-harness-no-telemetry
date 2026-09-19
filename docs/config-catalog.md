@@ -3013,8 +3013,12 @@ Source: [`packages/todo/tool-todo/src/index.ts:29`](../packages/todo/tool-todo/s
 Requires: `tools` · `web` · `systemPrompt`
 
 ```ts config-catalog
-/** Plugin config for the fetch timeout and output cap. */
+/** Plugin config: which web tools to register, plus the fetch budget and output cap. */
 export interface Config {
+  /** Register `web_search`. Defaults to true. */
+  search?: boolean
+  /** Register `web_fetch`. Defaults to true. */
+  fetch?: boolean
   /** Cooperative timeout budget (ms) for `web_fetch`. Defaults to 30000. */
   fetchTimeoutMs?: number
   /** Cap on source characters converted and complete `web_fetch` output characters. Defaults to 200000. */
@@ -3022,7 +3026,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/web/tool-web/src/index.ts:34`](../packages/web/tool-web/src/index.ts)
+Source: [`packages/web/tool-web/src/index.ts:37`](../packages/web/tool-web/src/index.ts)
 
 <a id="deepseek-aidsh-tool-workflow"></a>
 
@@ -3131,16 +3135,28 @@ Source: [`packages/interaction/user-approval/src/index.ts:127`](../packages/inte
 
 ```ts config-catalog
 /**
- * Config for fetch provider selection. One usable provider auto-selects when
- * no id is configured; `DSH_WEB_FETCH_PROVIDER` supplies the same field.
+ * Config for the web seam. `searchProvider` / `fetchProvider` pin which provider
+ * wins for each capability; both are optional (a single registered usable
+ * provider auto-selects). Operational overrides such as environment variables
+ * must feed these same fields rather than introduce a hidden priority chain.
  */
 export interface WebRuntimeConfig {
+  /** Explicit search provider id. Omitted = auto-select when exactly one usable. */
+  readonly searchProvider?: string
   /** Explicit fetch provider id. Omitted = auto-select when exactly one usable. */
   readonly fetchProvider?: string
+  /** Combined source cap for one model-facing search call. */
+  readonly searchMaxResults?: number
+  /** Query-count cap for one model-facing search call. */
+  readonly searchMaxQueries?: number
+  /** Provider searches allowed to execute concurrently across the Host. */
+  readonly searchMaxConcurrent?: number
+  /** Cooperative model-facing search timeout in milliseconds. */
+  readonly searchTimeoutMs?: number
 }
 ```
 
-Source: [`packages/web/web/src/index.ts:45`](../packages/web/web/src/index.ts)
+Source: [`packages/web/web/src/index.ts:96`](../packages/web/web/src/index.ts)
 
 <a id="deepseek-aidsh-web-app"></a>
 
@@ -3192,6 +3208,28 @@ export interface Config {
 ```
 
 Source: [`packages/web/web-fetch-http/src/index.ts:32`](../packages/web/web-fetch-http/src/index.ts)
+
+<a id="deepseek-aidsh-web-search-searxng"></a>
+
+## `@deepseek-ai/dsh-web-search-searxng`
+
+Requires: `web`
+
+```ts config-catalog
+/** The endpoint is deployment-owned; no public SearXNG instance is assumed. */
+export interface Config {
+  /** Instance root URL, optionally containing a path prefix. */
+  baseURL?: string
+  /** SearXNG language code. Defaults to `all`. */
+  language?: string
+  /** Comma-separated SearXNG categories. Omitted uses the instance default. */
+  categories?: string
+  /** SearXNG safe-search level, 0–2. Omitted uses the instance default. */
+  safesearch?: number
+}
+```
+
+Source: [`packages/web/web-search-searxng/src/index.ts:19`](../packages/web/web-search-searxng/src/index.ts)
 
 <a id="deepseek-aidsh-webhook-github"></a>
 

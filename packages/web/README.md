@@ -1,5 +1,5 @@
 ---
-description: "Package map for the web access capability family: the fetch service, its provider backend, and the model-facing tool that consumes it."
+description: "Package map for the web access capability family: search and fetch providers and their model-facing tools."
 kind: "package-group"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The `web/` group provides URL retrieval through `ctx.web`, the public HTTP(S) fetch provider, and the model-facing `web_fetch` tool. Provider selection, cancellation, and errors belong to the service.
+The `web/` group provides search and URL retrieval through `ctx.web`, the SearXNG search provider, the public HTTP(S) fetch provider, and model-facing `web_search` and `web_fetch` tools. Provider selection, cancellation, and errors belong to the service.
 
 ## Table of Contents
 
@@ -22,13 +22,14 @@ The `web/` group provides URL retrieval through `ctx.web`, the public HTTP(S) fe
 <a id="packages"></a>
 ## Packages
 
-Six packages play the web roles; the subsystem reference owns the exhaustive vocabulary and contracts.
+The subsystem reference owns the exhaustive vocabulary and contracts.
 
 | Package | Role | ctx key |
 |---|---|---|
-| [`web/`](web/README.md) | Fetch service: retrieve URLs through interchangeable backends, one selection and error policy | `ctx.web` |
+| [`web/`](web/README.md) | Search and fetch service with separate provider selection | `ctx.web` |
+| [`web-search-searxng/`](web-search-searxng/README.md) | Searches a configured SearXNG instance | registers on `ctx.web` |
 | [`web-fetch-http/`](web-fetch-http/README.md) | Fetches public HTTP(S) pages anonymously | registers on `ctx.web` |
-| [`tool-web/`](tool-web/README.md) | Exposes `web_fetch` to the model | registers on `ctx.tools` |
+| [`tool-web/`](tool-web/README.md) | Exposes `web_search` and `web_fetch` to the model | registers on `ctx.tools` |
 
 -----
 

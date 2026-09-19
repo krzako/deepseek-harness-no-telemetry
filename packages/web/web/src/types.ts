@@ -1,9 +1,67 @@
 /**
- * Vocabulary for the web fetch capability (`ctx.web`).
+ * Vocabulary for the web capability seam (`ctx.web`). Search and fetch deliberately share one
+ * seam so provider selection, cancellation, errors, and product configuration have one owner,
+ * while retaining separate request and result types.
  * @module @deepseek-ai/dsh-web/types
  */
 
 import { HarnessError } from '@deepseek-ai/dsh-llm'
+
+/**
+ * What one search-capable backend is asked to search. Each request carries one
+ * query; a consumer may issue several requests. `maxResults` is a
+ * `dsh-tool-web`-layer bound passed through unchanged and enforced on the way
+ * back by the seam (see {@link WebSearchResult}).
+ */
+export interface WebSearchRequest {
+  readonly query: string
+  /**
+   * Upper bound on returned sources; the seam truncates to it. Omitted = no
+   * bound. `dsh-tool-web` always sets it. A provider may use an API-level
+   * count limit as an optimization; the seam enforces the bound regardless.
+   */
+  readonly maxResults?: number
+}
+
+/** One provider-owned draft option used only for an administrator connection test. */
+export interface WebSearchConnectionOption {
+  readonly name: string
+  readonly value: string
+}
+
+/** Draft provider configuration to test without persisting it. */
+export interface WebSearchConnectionTestRequest {
+  readonly options: readonly WebSearchConnectionOption[]
+}
+
+/**
+ * Normalized search outcome. `content` is an optional provider-generated
+ * answer or summary; the SearXNG provider returns sources without one.
+ * `sources[]` is the portable citation shape. `truncated` is set by the seam
+ * when it cut `sources[]` down to `maxResults`.
+ */
+export interface WebSearchResult {
+  /** Optional provider-generated answer text, search context, or summary. */
+  readonly content?: string
+  /** Citeable sources, already truncated to the request's `maxResults`. */
+  readonly sources: readonly WebSearchSource[]
+  /** True when the seam dropped sources to honor `maxResults`. */
+  readonly truncated: boolean
+}
+
+/**
+ * One citeable source. A source always has a URL; `title`, `snippet`, and
+ * `publishedAt` are optional because not every provider returns them — forcing
+ * adapters to invent them would make the seam lie. `dsh-tool-web` renders
+ * `title ?? hostname(url)` for display.
+ */
+export interface WebSearchSource {
+  readonly url: string
+  readonly title?: string
+  readonly snippet?: string
+  /** Publication/crawl timestamp as a provider-supplied ISO-8601 string. */
+  readonly publishedAt?: string
+}
 
 /**
  * What one fetch-capable backend is asked to retrieve. The request deliberately
@@ -44,6 +102,20 @@ export interface WebFetchResult {
 export type WebFetchBody =
   | { readonly kind: 'html'; readonly content: string }
   | { readonly kind: 'text'; readonly content: string }
+
+/**
+ * A search-capable backend. Registered with `ctx.web.registerSearchProvider`.
+ * `id` is a stable string, unique within the search capability kind.
+ */
+export interface WebSearchProvider {
+  readonly id: string
+  /** Cheap local usability check; must not make network calls. */
+  available(): boolean
+  /** Run one search; honor `signal` for cancellation. */
+  search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult>
+  /** Test an administrator-supplied draft without changing the live configuration. */
+  testConnection?(request: WebSearchConnectionTestRequest, signal?: AbortSignal): Promise<void>
+}
 
 /**
  * A fetch-capable backend. Registered with `ctx.web.registerFetchProvider`.

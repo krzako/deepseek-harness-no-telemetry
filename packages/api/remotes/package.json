@@ -77,6 +77,7 @@
     "@deepseek-ai/dsh-subagent": "workspace:^",
     "@deepseek-ai/dsh-user-approval": "workspace:^",
     "@deepseek-ai/dsh-user-questions": "workspace:^",
+    "@deepseek-ai/dsh-web": "workspace:^",
     "@deepseek-ai/dsh-client-connection": "workspace:^",
     "@deepseek-ai/dsh-client-file-upload": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",

@@ -419,6 +419,7 @@
       "@deepseek-ai/dsh-web": ["./packages/web/web/src"],
       "@deepseek-ai/dsh-web-app": ["./packages/bundle/web-app/src"],
       "@deepseek-ai/dsh-web-fetch-http": ["./packages/web/web-fetch-http/src"],
+      "@deepseek-ai/dsh-web-search-searxng": ["./packages/web/web-search-searxng/src"],
       "@deepseek-ai/dsh-webhook": ["./packages/webhook/webhook/src"],
       "@deepseek-ai/dsh-webhook/invariant": ["./packages/webhook/webhook/src/invariant.ts"],
       "@deepseek-ai/dsh-webhook-github": ["./packages/webhook/webhook-github/src"],

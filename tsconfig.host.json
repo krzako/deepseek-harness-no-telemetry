@@ -286,6 +286,7 @@
     { "path": "./packages/compaction/compaction-tool-result-pruner" },
     { "path": "./packages/web/web" },
     { "path": "./packages/web/web-fetch-http" },
+    { "path": "./packages/web/web-search-searxng" },
     { "path": "./packages/web/tool-web" },
     { "path": "./packages/spill/spill" },
     { "path": "./packages/spill/spill-local" },

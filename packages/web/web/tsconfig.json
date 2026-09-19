@@ -19,6 +19,12 @@
     },
     {
       "path": "../../llm/llm"
+    },
+    {
+      "path": "../../settings/settings"
+    },
+    {
+      "path": "../../typert/protocol"
     }
   ]
 }

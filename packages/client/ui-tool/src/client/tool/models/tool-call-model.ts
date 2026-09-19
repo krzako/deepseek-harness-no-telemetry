@@ -50,6 +50,7 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   // derives no filePath — so the path the row advertises as openable never is.
   read_image: 'read',
   web_fetch: 'read',
+  web_search: 'search',
   grep: 'search',
   glob: 'search',
   write: 'write',

@@ -119,6 +119,7 @@
     "@deepseek-ai/dsh-util-time": "workspace:^",
     "@deepseek-ai/dsh-web": "workspace:^",
     "@deepseek-ai/dsh-web-fetch-http": "workspace:^",
+    "@deepseek-ai/dsh-web-search-searxng": "workspace:^",
     "@deepseek-ai/dsh-workflow": "workspace:^",
     "@deepseek-ai/dsh-workflow-worker-thread": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^"

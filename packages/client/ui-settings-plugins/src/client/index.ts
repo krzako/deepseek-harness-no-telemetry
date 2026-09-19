@@ -24,11 +24,15 @@ import { AgentLoopCard } from './AgentLoopCard.tsx'
 import { BashCard } from './BashCard.tsx'
 import { ConfigurablePluginsTab } from './ConfigurablePluginsTab.tsx'
 import { PluginsSettingsSection } from './PluginsSettingsSection.tsx'
+import { SearxngCard } from './SearxngCard.tsx'
 import type { PluginsSettingsSectionInjected, PluginsSettingsTabEntry } from './PluginsSettingsSection.tsx'
 import { SubagentModelSelectionCard } from './SubagentModelSelectionCard.tsx'
+import { WebSearchCard } from './WebSearchCard.tsx'
 import { AGENT_LOOP_NS, AgentLoopCardController } from './agent-loop-card-controller.ts'
 import { SHELL_NS, BashCardController } from './bash-card-controller.ts'
 import { ConfigurablePluginsTabController } from './tab-store.ts'
+import { SEARXNG_NS, SearxngCardController } from './searxng-card-controller.ts'
+import { WEB_SEARCH_NS, WebSearchCardController } from './web-search-card-controller.ts'
 import {
   SUBAGENT_MODEL_SELECTION_NS, SubagentModelSelectionCardController,
 } from './subagent-model-selection-card-controller.ts'
@@ -45,13 +49,15 @@ export type {
 } from './card-form.ts'
 export type { AgentLoopCardFace, AgentLoopCardState } from './agent-loop-card-controller.ts'
 export type { BashCardFace, BashCardState } from './bash-card-controller.ts'
+export type { SearxngCardFace, SearxngCardState } from './searxng-card-controller.ts'
+export type { WebSearchCardFace, WebSearchCardState } from './web-search-card-controller.ts'
 
 /** Dictionary namespace owned by this plugin. */
 const NS = 'settings.plugins'
 
 /** Required services (cordis fiber inject). */
 export const inject = [
-  'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'settingsScope',
+  'slots', 'locale', 'remote', 'remote.session', 'remote.web', 'settingsScope',
 ]
 
 /**
@@ -64,6 +70,16 @@ export function apply(ctx: ClientContext): void {
 
   const bash = new BashCardController(ctx.settingsScope.bind({ namespace: SHELL_NS }))
   const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }))
+  const webSearch = new WebSearchCardController(ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }))
+  const searxng = new SearxngCardController(
+    ctx.settingsScope.bind({ namespace: SEARXNG_NS }),
+    async (settings, signal) => {
+      const options = Object.entries(settings)
+        .filter((entry): entry is [string, string | number] => entry[1] !== undefined)
+        .map(([name, value]) => ({ name, value: String(value) }))
+      return (await ctx.remote.web.testSearchConnection({ options }, signal)).ok
+    },
+  )
   const subagentModelSelection = new SubagentModelSelectionCardController(
     ctx.settingsScope.bind({ namespace: SUBAGENT_MODEL_SELECTION_NS }),
     ctx,
@@ -165,6 +181,18 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       inject: () => agentLoop.inject(),
     }, AgentLoopCard)
+    yield ctx.slots.register({
+      name: 'settings.plugin.item',
+      key: WEB_SEARCH_NS,
+      locale: NS,
+      inject: () => webSearch.inject(),
+    }, WebSearchCard)
+    yield ctx.slots.register({
+      name: 'settings.plugin.item',
+      key: SEARXNG_NS,
+      locale: NS,
+      inject: () => searxng.inject(),
+    }, SearxngCard)
     yield ctx.slots.register({
       name: 'settings.plugin.item',
       key: SUBAGENT_MODEL_SELECTION_NS,

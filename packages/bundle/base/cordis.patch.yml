@@ -407,11 +407,16 @@
         thresholds: [3, 5, 8]
         argumentsPreviewChars: 500
 
-    # The shared base exposes public HTTP(S) URL retrieval through web_fetch.
+    # Search uses the deployment's SearXNG instance (SEARXNG_BASE_URL or plugin
+    # config). Anonymous web_fetch still accepts only public HTTP(S) destinations.
     - id: web
       name: '@deepseek-ai/dsh-web'
       config:
+        searchProvider: searxng
         fetchProvider: http
+
+    - id: web-search-searxng
+      name: '@deepseek-ai/dsh-web-search-searxng'
 
     - id: web-fetch-http
       name: '@deepseek-ai/dsh-web-fetch-http'

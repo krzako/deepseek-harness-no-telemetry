@@ -307,8 +307,63 @@ export interface ReadResultView {
   content?: ContentBlock[]
 }
 
-/** A completed web fetch result. */
-export type WebResultView = WebFetchResultView
+/**
+ * One citeable source in a completed {@link WebSearchResultView}, the faithful
+ * projection of one web-search source. The presentation projection of `dsh-web`'s
+ * `WebSearchSource`: that Service Definition type is authoritative (core cannot depend
+ * on the web Service Definition, so the two are declared separately and MUST evolve together).
+ * A web tool projects this shape through `output.presentationMeta` because the
+ * render text cannot losslessly carry it (see the web-result-card Agent Note); its
+ * `presentResult` reads it back.
+ */
+export interface WebSource {
+  /** The source URL. */
+  url: string
+  /** The source title, when the provider returned one. */
+  title?: string
+  /** A short excerpt or summary, when the provider returned one. */
+  snippet?: string
+  /** Publication/crawl timestamp as a provider-supplied ISO-8601 string, when present. */
+  publishedAt?: string
+}
+
+/**
+ * A completed web retrieval rendered as a structured card by a capable UI. Set
+ * by a web tool whose call retrieves from the web (`web_search`, `web_fetch`).
+ * One `kind`-tagged union carries both shapes because both are web retrieval and
+ * a UI renders them with one component family; a UI switches on `kind`. An
+ * incapable UI falls back to the raw `tool/result` content (this view carries no
+ * `content` copy — see the web-result-card Agent Note). This is the result-time
+ * analogue of the `web_search`/`web_fetch` calls' generic call views
+ * (`kind: 'search'`/`'fetch'`); those tools keep their generic pending card and
+ * add only this completed card.
+ *
+ * The `kind` field here is this union's own discriminant, NOT a
+ * {@link ToolCallKind}: the two values deliberately match the tools' pending
+ * `ToolCallKind` (`'search'`/`'fetch'`) so a call and its result read as one
+ * category, but a new arm is a union edit plus a consumer branch, not any
+ * arbitrary `ToolCallKind` value.
+ */
+export type WebResultView = WebSearchResultView | WebFetchResultView
+
+/**
+ * The completed state of a `web_search` call: the structured sources the model
+ * cited, an optional provider answer, and whether the source list was cut to the
+ * result cap. A capable UI renders the sources as a citation list; a UI without
+ * the `web` capability falls back to the raw `tool/result` content.
+ */
+export interface WebSearchResultView {
+  card: 'web'
+  kind: 'search'
+  /** Replacement title for the completed call. Omit to keep the pending-state title. */
+  title?: string
+  /** The faithful, structured sources — the field render text cannot losslessly carry. */
+  sources: WebSource[]
+  /** The provider-generated answer text, when any. */
+  answer?: string
+  /** True when the web service cut the source list to honor the result cap. */
+  truncated: boolean
+}
 
 /**
  * The completed state of a `web_fetch` call: the fetched URL, its HTTP status,

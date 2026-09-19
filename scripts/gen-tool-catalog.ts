@@ -31,6 +31,7 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import PlanModeController from '@deepseek-ai/dsh-plan-mode'
 import WebRuntime from '@deepseek-ai/dsh-web'
 import * as WebFetchLocal from '@deepseek-ai/dsh-web-fetch-http'
+import * as WebSearchSearxng from '@deepseek-ai/dsh-web-search-searxng'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentProvider } from '@deepseek-ai/dsh-subagent'
 import * as ToolSubagentControl from '@deepseek-ai/dsh-tool-subagent-control'
@@ -581,10 +582,11 @@ const TOOL_PACKAGES: ToolPackage[] = [
     async mount(ctx) {
       await ctx.plugin(WebRuntime)
       await ctx.plugin(WebFetchLocal)
+      await ctx.plugin(WebSearchSearxng, { baseURL: 'http://localhost:8080' })
       await ctx.plugin(ToolWeb)
     },
     note:
-      'web_fetch keeps provider selection behind ctx.web so the model-visible schema stays stable across backend swaps.',
+      'web_search uses SearXNG and web_fetch uses the HTTP provider behind ctx.web; the model-visible tool schemas stay stable across backend swaps.',
   },
 ]
 

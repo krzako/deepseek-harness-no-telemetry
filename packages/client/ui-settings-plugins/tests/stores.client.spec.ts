@@ -9,6 +9,8 @@ import { RemoteError, stubSettingsScope, type StubSettingsScope } from '@deepsee
 import { CardForm, numberField, textField } from '../src/client/card-form.ts'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-card-controller.ts'
 import { BashCardController, type BashSettings } from '../src/client/bash-card-controller.ts'
+import { SearxngCardController, type SearxngSettings } from '../src/client/searxng-card-controller.ts'
+import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
 import {
   SettingsDescribeMirror, type SettingsMirrorSnapshot,
 } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
@@ -420,6 +422,114 @@ describe('AgentLoopCardController', () => {
     host.publish({ status: 'ready', writable: false, value: { maxParallelToolCalls: 10 } })
 
     expect(controller.inject().hooks.agentLoopCard.getSnapshot().writable).toBe(false)
+  })
+})
+
+describe('SearxngCardController', () => {
+  it('projects and saves every provider option', async () => {
+    const host = stubSettingsScope<SearxngSettings>()
+    acceptWrites(host)
+    const controller = new SearxngCardController(host.scope)
+    host.publish({
+      status: 'ready', writable: true,
+      value: { baseURL: 'http://localhost:8080', language: 'pl-PL', categories: 'general', safesearch: 1 },
+      base: { baseURL: 'http://localhost:8080' }, user: {},
+    })
+    const face = controller.inject()
+
+    expect(face.hooks.searxngCard.getSnapshot()).toMatchObject({
+      baseURL: { text: 'http://localhost:8080', overridden: false },
+      language: { text: 'pl-PL', overridden: false },
+      categories: { text: 'general', overridden: false },
+      safesearch: { text: '1', overridden: false },
+    })
+
+    face.edit('baseURL', 'https://search.example/searxng')
+    face.edit('language', 'en-US')
+    face.edit('categories', 'general,news')
+    face.edit('safesearch', '2')
+    face.save()
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledTimes(4) })
+
+    expect(host.set.mock.calls).toEqual([
+      ['baseURL', 'https://search.example/searxng'],
+      ['language', 'en-US'],
+      ['categories', 'general,news'],
+      ['safesearch', 2],
+    ])
+  })
+
+  it('rejects malformed URLs and safe-search levels before saving', async () => {
+    const host = stubSettingsScope<SearxngSettings>()
+    const controller = new SearxngCardController(host.scope)
+    host.publish({ status: 'ready', writable: true, value: {}, user: {} })
+    const face = controller.inject()
+
+    face.edit('baseURL', 'ftp://search.example')
+    face.edit('safesearch', '3')
+
+    expect(face.hooks.searxngCard.getSnapshot()).toMatchObject({
+      invalid: true,
+      baseURL: { invalid: true },
+      safesearch: { invalid: true },
+    })
+    face.save()
+    await Promise.resolve()
+    expect(host.set).not.toHaveBeenCalled()
+  })
+})
+
+describe('WebSearchCardController', () => {
+  it('projects and saves every administrator-owned search limit', async () => {
+    const host = stubSettingsScope<WebSearchSettings>()
+    acceptWrites(host)
+    const controller = new WebSearchCardController(host.scope)
+    host.publish({
+      status: 'ready', writable: true,
+      value: { searchMaxResults: 12, searchMaxQueries: 4, searchMaxConcurrent: 4, searchTimeoutMs: 30_000 },
+      base: { searchMaxResults: 12, searchMaxQueries: 4, searchMaxConcurrent: 4, searchTimeoutMs: 30_000 },
+      user: {},
+    })
+    const face = controller.inject()
+
+    expect(face.hooks.webSearchCard.getSnapshot()).toMatchObject({
+      searchMaxResults: { text: '12', overridden: false },
+      searchMaxQueries: { text: '4', overridden: false },
+      searchMaxConcurrent: { text: '4', overridden: false },
+      searchTimeoutMs: { text: '30000', overridden: false },
+    })
+
+    face.edit('searchMaxResults', '20')
+    face.edit('searchMaxQueries', '3')
+    face.edit('searchMaxConcurrent', '6')
+    face.edit('searchTimeoutMs', '45000')
+    face.save()
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledTimes(4) })
+    expect(host.set.mock.calls).toEqual([
+      ['searchMaxResults', 20],
+      ['searchMaxQueries', 3],
+      ['searchMaxConcurrent', 6],
+      ['searchTimeoutMs', 45_000],
+    ])
+  })
+
+  it('blocks non-positive and fractional limits before saving', async () => {
+    const host = stubSettingsScope<WebSearchSettings>()
+    const controller = new WebSearchCardController(host.scope)
+    host.publish({ status: 'ready', writable: true, value: {}, user: {} })
+    const face = controller.inject()
+
+    face.edit('searchMaxResults', '0')
+    face.edit('searchMaxQueries', '1.5')
+
+    expect(face.hooks.webSearchCard.getSnapshot()).toMatchObject({
+      invalid: true,
+      searchMaxResults: { invalid: true },
+      searchMaxQueries: { invalid: true },
+    })
+    face.save()
+    await Promise.resolve()
+    expect(host.set).not.toHaveBeenCalled()
   })
 })
 

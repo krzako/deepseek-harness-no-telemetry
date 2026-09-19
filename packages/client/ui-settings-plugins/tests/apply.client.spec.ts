@@ -50,6 +50,7 @@ async function bench(served?: string[]) {
     credentials: { describe: describeCredentials, set: vi.fn() },
     session: { modelCatalog: models },
     settings: { describe: describeSettings },
+    web: { testSearchConnection: vi.fn(() => Promise.resolve({ ok: true, value: undefined })) },
   })
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return {
@@ -71,7 +72,7 @@ describe('ui-settings-plugins apply', () => {
 
   it('declares the services it uses', () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'settingsScope',
+      'slots', 'locale', 'remote', 'remote.session', 'remote.web', 'settingsScope',
     ])
   })
 
@@ -132,7 +133,7 @@ describe('ui-settings-plugins apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     expect(slots.entries('settings.plugin.item').map(entry => entry.options.key))
-      .toEqual(['shell', 'agent-loop', 'subagent-model-selection'])
+      .toEqual(['shell', 'agent-loop', 'web-search', 'web-search-searxng', 'subagent-model-selection'])
   })
 
   it('dispatches the served namespaces its cards claim, and no others', async () => {
@@ -177,20 +178,6 @@ describe('ui-settings-plugins apply', () => {
     await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalled() })
   })
 
-  it('re-reads the credential when the Host reports the watched reference changed', async () => {
-    const { ctx, slots, describeCredentials, remote } = await bench()
-    declareRoot(slots)
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalled() })
-    describeCredentials.mockClear()
-
-    // A key written on another surface changes no settings section, so this
-    // event is the only thing that reaches the card.
-    remote.emit('credentials/reference-updated', ['DEEPSEEK_API_KEY'])
-
-    await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalledTimes(1) })
-  })
-
   it('refreshes the subagent catalog after model inputs change or the connection resets', async () => {
     const refresh = vi.spyOn(SubagentModelSelectionCardController.prototype, 'refreshCatalog')
     const reset = vi.spyOn(SubagentModelSelectionCardController.prototype, 'resetConnection')
@@ -208,19 +195,6 @@ describe('ui-settings-plugins apply', () => {
     expect(reset).toHaveBeenCalledTimes(1)
   })
 
-  it('ignores a credential change for a reference no card watches', async () => {
-    const { ctx, slots, describeCredentials, remote } = await bench()
-    declareRoot(slots)
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalled() })
-    describeCredentials.mockClear()
-
-    remote.emit('credentials/reference-updated', ['SOME_OTHER_KEY'])
-    await Promise.resolve()
-
-    expect(describeCredentials).not.toHaveBeenCalled()
-  })
-
   it('registers into a declaration that arrives after apply', async () => {
     const { ctx, slots } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
@@ -235,7 +209,7 @@ describe('ui-settings-plugins apply', () => {
     declareRoot(slots)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(slots.entries('settings.plugin.item')).toHaveLength(4)
+    expect(slots.entries('settings.plugin.item')).toHaveLength(5)
 
     await fiber.dispose()
 

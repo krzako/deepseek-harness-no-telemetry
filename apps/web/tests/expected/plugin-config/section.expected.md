@@ -33,6 +33,14 @@
           - text: Agent 循环 Agent 如何派发工具调用。
           - img
       - listitem:
+        - 'button "展开设置: 网页搜索"':
+          - text: 网页搜索 控制 Agent 可同时执行多少搜索工作。
+          - img
+      - listitem:
+        - 'button "展开设置: SearXNG"':
+          - text: SearXNG 配置搜索实例及其默认查询选项。
+          - img
+      - listitem:
         - 'button "展开设置: Subagent"':
           - text: Subagent 控制 Agent 为 Subagent 选择模型的权限。
           - img

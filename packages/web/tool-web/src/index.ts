@@ -1,5 +1,5 @@
 /**
- * Model-facing `web_fetch` tool over `ctx.web`. This package owns schemas,
+ * Model-facing `web_search` and `web_fetch` tools over `ctx.web`. This package owns schemas,
  * validation, prompt guidance, limits, and presentation, never concrete providers. Enablement
  * controls tool registration; an enabled tool remains visible when its provider is unavailable
  * and fails with a structured error at execution time.
@@ -9,8 +9,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-web'
+import { applyWebSearchTool } from './search.ts'
 import { applyWebFetchTool } from './fetch.ts'
 
+export { WEB_SEARCH_MAX_QUERIES, WEB_SEARCH_MAX_RESULTS, applyWebSearchTool, formatSearchOutput, presentSearchCall, presentSearchResult, searchMetaFromValue, searchMetaFromResult } from './search.ts'
+export type { WebSearchMeta } from './search.ts'
 export { applyWebFetchTool, formatFetchOutput, parseFetchArgs, presentFetchCall, presentFetchResult, fetchMetaFromValue, fetchMetaFromResult } from './fetch.ts'
 export type { WebFetchMeta } from './fetch.ts'
 
@@ -30,8 +33,12 @@ export const DEFAULT_WEB_TOOL_TIMEOUT_MS = 30_000
  */
 export const DEFAULT_FETCH_MAX_OUTPUT_CHARS = 200_000
 
-/** Plugin config for the fetch timeout and output cap. */
+/** Plugin config: which web tools to register, plus the fetch budget and output cap. */
 export interface Config {
+  /** Register `web_search`. Defaults to true. */
+  search?: boolean
+  /** Register `web_fetch`. Defaults to true. */
+  fetch?: boolean
   /** Cooperative timeout budget (ms) for `web_fetch`. Defaults to 30000. */
   fetchTimeoutMs?: number
   /** Cap on source characters converted and complete `web_fetch` output characters. Defaults to 200000. */
@@ -39,6 +46,8 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
+  search: z.boolean().default(true),
+  fetch: z.boolean().default(true),
   fetchTimeoutMs: z.number().default(DEFAULT_WEB_TOOL_TIMEOUT_MS),
   fetchMaxOutputChars: z.number().default(DEFAULT_FETCH_MAX_OUTPUT_CHARS),
 })
@@ -54,8 +63,11 @@ function assertPositiveInteger(name: string, value: number): void {
 }
 
 /**
- * Register the fetch tool. Its cooperative timeout budget (`fetchTimeoutMs`, default 30000) is resolved
- * here and attached to the tool as `ToolDefinition.timeoutMs` for
+ * Register the enabled web tools. `search`/`fetch` default to true; a product
+ * that wants only one disables the other in config. Each tool's cooperative
+ * fetch timeout budget is resolved here. Search limits and its timeout come
+ * from the live administrator-owned `ctx.web.searchSettings` section. Each
+ * budget is attached to the tool as `ToolDefinition.timeoutMs` for
  * `@deepseek-ai/dsh-tool-call-timeout-policy` to enforce. The tools' disposers are
  * fiber-scoped (the effect-based registries clean up on dispose), so no manual
  * teardown is needed.
@@ -65,5 +77,9 @@ export function apply(ctx: Context, config: Config): void {
   const resolved = config as ResolvedConfig
   assertPositiveInteger('fetchTimeoutMs', resolved.fetchTimeoutMs)
   assertPositiveInteger('fetchMaxOutputChars', resolved.fetchMaxOutputChars)
-  applyWebFetchTool(ctx, resolved.fetchTimeoutMs, resolved.fetchMaxOutputChars)
+  if (resolved.search) {
+    const search = ctx.web.searchSettings
+    applyWebSearchTool(ctx, search.searchMaxResults, search.searchMaxQueries, search.searchTimeoutMs, resolved.fetch)
+  }
+  if (resolved.fetch) applyWebFetchTool(ctx, resolved.fetchTimeoutMs, resolved.fetchMaxOutputChars)
 }

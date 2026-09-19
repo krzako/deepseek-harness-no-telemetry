@@ -59,5 +59,6 @@ export const jsonTreeLabels: JsonTreeLabels = {
 }
 
 export const webBlockLabels: WebBlockLabels = {
-  http: 'HTTP', contentTruncated: '内容已截断',
+  noResults: '未找到结果', sourcesTruncated: '来源列表已截断',
+  http: 'HTTP', contentTruncated: '内容已截断', markdown: markdownLabels,
 }

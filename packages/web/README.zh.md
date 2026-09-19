@@ -1,5 +1,5 @@
 ---
-description: "web 访问能力家族的包映射：抓取服务、提供方后端和面向模型的工具。"
+description: "web 访问能力家族的包映射：搜索与抓取服务、提供方后端和面向模型的工具。"
 kind: "package-group"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-`web/` 组通过 `ctx.web`、公网 HTTP(S) 抓取提供方和面向模型的 `web_fetch` 工具读取 URL。
+`web/` 组通过 `ctx.web` 提供搜索和 URL 抓取，包括 SearXNG 搜索提供方、公网 HTTP(S) 抓取提供方，以及面向模型的 `web_search` 和 `web_fetch` 工具。
 
 ## 目录
 
@@ -22,13 +22,14 @@ kind: "package-group"
 <a id="packages"></a>
 ## 包
 
-六个包分别承担 web 角色；子系统参考文档拥有穷尽式词汇与约定。
+子系统参考文档拥有完整的词汇与约定。
 
 | 包 | 职责 | ctx 键 |
 |---|---|---|
-| [`web/`](web/README.zh.md) | 抓取服务：通过可互换的后端读取 URL，统一选择与错误策略 | `ctx.web` |
+| [`web/`](web/README.zh.md) | 搜索与抓取服务，分别选择提供方 | `ctx.web` |
+| [`web-search-searxng/`](web-search-searxng/README.zh.md) | 搜索已配置的 SearXNG 实例 | 注册到 `ctx.web` |
 | [`web-fetch-http/`](web-fetch-http/README.zh.md) | 匿名抓取公共 HTTP(S) 页面 | 注册到 `ctx.web` |
-| [`tool-web/`](tool-web/README.zh.md) | 向模型公开 `web_fetch` | 注册到 `ctx.tools` |
+| [`tool-web/`](tool-web/README.zh.md) | 向模型公开 `web_search` 和 `web_fetch` | 注册到 `ctx.tools` |
 
 -----
 

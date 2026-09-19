@@ -190,6 +190,7 @@ flowchart LR
   pkg_web["web"]
   svc_web["ctx.web<br/>Web access provider registry"]
   pkg_web_fetch_http["web-fetch-http"]
+  pkg_web_search_searxng["web-search-searxng"]
   pkg_spill["spill"]
   svc_spillStore["ctx.spillStore<br/>Spill storage seam"]
   pkg_spill_local["spill-local"]
@@ -327,6 +328,7 @@ flowchart LR
   pkg_user_questions --> svc_userQuestions
   pkg_web --> svc_web
   pkg_web_fetch_http --> svc_web
+  pkg_web_search_searxng --> svc_web
   pkg_webhook --> svc_webhookRuntime
   pkg_workflow --> svc_workflowEngine
   pkg_workflow_worker_thread --> svc_workflowEngine

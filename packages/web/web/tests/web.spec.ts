@@ -1,26 +1,323 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import WebRuntime, { WebError } from '@deepseek-ai/dsh-web'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import WebRuntime, {
+  DEFAULT_WEB_SEARCH_MAX_CONCURRENT,
+  DEFAULT_WEB_SEARCH_MAX_QUERIES,
+  DEFAULT_WEB_SEARCH_MAX_RESULTS,
+  DEFAULT_WEB_SEARCH_TIMEOUT_MS,
+  WEB_SEARCH_SETTINGS_NAMESPACE,
+  WebError,
+  type WebFetchProvider,
+  type WebFetchResult,
+  type WebSearchProvider,
+  type WebSearchRequest,
+  type WebSearchResult,
+} from '@deepseek-ai/dsh-web'
 
-describe('web fetch runtime', () => {
-  it('selects the registered provider and retrieves a URL', async () => {
-    const ctx = new Context()
-    await ctx.plugin(WebRuntime)
-    ctx.web.registerFetchProvider({ id: 'http', available: () => true, fetch: async request => ({
-      url: request.url, statusCode: 200, body: { kind: 'text', content: 'ok' }, truncated: false,
-    }) })
-    await expect(ctx.web.fetch({ url: 'https://example.com' })).resolves.toMatchObject({ statusCode: 200 })
+/** Writable in-memory settings provider for live WebRuntime settings tests. */
+class MemorySettings extends SettingsProvider {
+  private stored: Record<string, unknown> = {}
+  override get writable(): boolean { return true }
+  protected override load(): Promise<Record<string, unknown>> { return Promise.resolve(structuredClone(this.stored)) }
+  protected override persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+    this.stored = { ...this.stored, [ns]: structuredClone(section) }
+    return Promise.resolve()
+  }
+}
+
+/** A scripted search provider for contract tests. */
+function makeSearchProvider(
+  id: string,
+  available: boolean,
+  search: (request: WebSearchRequest) => Promise<WebSearchResult>,
+): WebSearchProvider {
+  return { id, available: () => available, search: request => search(request) }
+}
+
+function makeFetchProvider(id: string, available: boolean, result: WebFetchResult): WebFetchProvider {
+  return { id, available: () => available, fetch: () => Promise.resolve(result) }
+}
+
+const available = true
+const unavailable = false
+
+function searchResult(marker: string, overrides: Partial<WebSearchResult> = {}): WebSearchResult {
+  return { content: marker, sources: [], truncated: false, ...overrides }
+}
+
+function fetchResult(marker: string): WebFetchResult {
+  return { url: 'https://example.com', statusCode: 200, body: { kind: 'text', content: marker }, truncated: false }
+}
+
+/** Mount a WebRuntime on a fresh root context with the given config. */
+async function mountWeb(config: ConstructorParameters<typeof WebRuntime>[1] = {}): Promise<{ ctx: Context; web: WebRuntime }> {
+  const ctx = new Context()
+  await ctx.plugin(WebRuntime, config)
+  return { ctx, web: ctx.web }
+}
+
+describe('WebRuntime registration', () => {
+  it('publishes the default model-facing search settings', async () => {
+    const { web } = await mountWeb()
+    expect(web.searchSettings).toEqual({
+      searchMaxResults: DEFAULT_WEB_SEARCH_MAX_RESULTS,
+      searchMaxQueries: DEFAULT_WEB_SEARCH_MAX_QUERIES,
+      searchMaxConcurrent: DEFAULT_WEB_SEARCH_MAX_CONCURRENT,
+      searchTimeoutMs: DEFAULT_WEB_SEARCH_TIMEOUT_MS,
+    })
   })
 
-  it('reports an unavailable provider', async () => {
+  it('serves live administrator search settings', async () => {
     const ctx = new Context()
-    await ctx.plugin(WebRuntime)
-    await expect(ctx.web.fetch({ url: 'https://example.com' })).rejects.toThrow(
+    await ctx.plugin(MemorySettings)
+    await ctx.plugin(WebRuntime, {})
+
+    expect(ctx.settings.describe().find(row => String(row.ns) === WEB_SEARCH_SETTINGS_NAMESPACE))
+      .toMatchObject({ value: { searchMaxResults: 12, searchMaxQueries: 4, searchMaxConcurrent: 4, searchTimeoutMs: 30_000 } })
+    await ctx.settings.update(WEB_SEARCH_SETTINGS_NAMESPACE, {
+      searchMaxResults: 9,
+      searchMaxQueries: 2,
+      searchMaxConcurrent: 1,
+      searchTimeoutMs: 12_000,
+    })
+    expect(ctx.web.searchSettings).toEqual({
+      searchMaxResults: 9,
+      searchMaxQueries: 2,
+      searchMaxConcurrent: 1,
+      searchTimeoutMs: 12_000,
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('registers a search provider and unregisters it via the returned disposer', async () => {
+    const { web } = await mountWeb()
+
+    const dispose = web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'exa' })
+
+    dispose()
+    await expect(web.search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_UNAVAILABLE' }))
+  })
+
+  it('throws WEB_DUPLICATE_PROVIDER on a duplicate search id', async () => {
+    const { web } = await mountWeb()
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    expect(() => web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa')))))
+      .toThrow(expect.objectContaining({ code: 'WEB_DUPLICATE_PROVIDER' }))
+  })
+
+  it('keeps search and fetch id namespaces independent', async () => {
+    const { web } = await mountWeb()
+    web.registerSearchProvider(makeSearchProvider('shared', available, () => Promise.resolve(searchResult('shared'))))
+    expect(() => web.registerFetchProvider(makeFetchProvider('shared', available, fetchResult('shared')))).not.toThrow()
+  })
+
+  it('disposes provider registrations when the contributing fiber is disposed (HMR safety)', async () => {
+    const { ctx, web } = await mountWeb()
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      inner.web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    }, { inject: ['web'] }))
+    await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'exa' })
+    await fiber.dispose()
+    await expect(web.search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_UNAVAILABLE' }))
+  })
+})
+
+describe('WebRuntime execution resolution', () => {
+  it('forwards draft options to the selected provider connection test', async () => {
+    const { web } = await mountWeb({ searchProvider: 'searxng' })
+    const testConnection = vi.fn(() => Promise.resolve())
+    web.registerSearchProvider({
+      id: 'searxng',
+      available: () => false,
+      search: () => Promise.resolve(searchResult('ok')),
+      testConnection,
+    })
+    const controller = new AbortController()
+    const request = { options: [{ name: 'baseURL', value: 'https://draft.example' }] }
+
+    await expect(web.testSearchConnection(request, controller.signal)).resolves.toBeUndefined()
+    expect(testConnection).toHaveBeenCalledWith(request, controller.signal)
+  })
+
+  it('throws WEB_PROVIDER_UNAVAILABLE when nothing is registered', async () => {
+    const { web } = await mountWeb()
+    await expect(web.search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_UNAVAILABLE' }))
+  })
+
+  it('throws WEB_PROVIDER_UNAVAILABLE when providers exist but none are usable', async () => {
+    const { web } = await mountWeb()
+    web.registerSearchProvider(makeSearchProvider('exa', unavailable, () => Promise.resolve(searchResult('exa'))))
+    await expect(web.search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_UNAVAILABLE' }))
+  })
+
+  it('throws WEB_PROVIDER_CONFIGURED_MISSING for an unregistered configured id', async () => {
+    const { web } = await mountWeb({ searchProvider: 'perplexity' })
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    await expect(web.search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_MISSING' }))
+  })
+
+  it('throws WEB_PROVIDER_CONFIGURED_UNAVAILABLE for an unusable configured id', async () => {
+    const { web } = await mountWeb({ searchProvider: 'exa' })
+    web.registerSearchProvider(makeSearchProvider('exa', unavailable, () => Promise.resolve(searchResult('exa'))))
+    await expect(web.search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE' }))
+  })
+
+  it('throws WEB_PROVIDER_AMBIGUOUS rather than picking by order', async () => {
+    const { web } = await mountWeb()
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    web.registerSearchProvider(makeSearchProvider('perplexity', available, () => Promise.resolve(searchResult('perplexity'))))
+    await expect(web.search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_AMBIGUOUS' }))
+  })
+
+  it('runs the configured provider even when another usable provider is registered', async () => {
+    const { web } = await mountWeb({ searchProvider: 'perplexity' })
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    web.registerSearchProvider(makeSearchProvider('perplexity', available, () => Promise.resolve(searchResult('perplexity'))))
+    await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'perplexity' })
+  })
+
+  it('ignores unusable providers when auto-selecting', async () => {
+    const { web } = await mountWeb()
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    web.registerSearchProvider(makeSearchProvider('perplexity', unavailable, () => Promise.resolve(searchResult('perplexity'))))
+    await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'exa' })
+  })
+
+  it('does not let registration order change auto-selection', async () => {
+    const a = await mountWeb()
+    a.web.registerSearchProvider(makeSearchProvider('exa', unavailable, () => Promise.resolve(searchResult('exa'))))
+    a.web.registerSearchProvider(makeSearchProvider('perplexity', available, () => Promise.resolve(searchResult('perplexity'))))
+    await expect(a.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'perplexity' })
+
+    const b = await mountWeb()
+    b.web.registerSearchProvider(makeSearchProvider('perplexity', available, () => Promise.resolve(searchResult('perplexity'))))
+    b.web.registerSearchProvider(makeSearchProvider('exa', unavailable, () => Promise.resolve(searchResult('exa'))))
+    await expect(b.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'perplexity' })
+  })
+
+  it('runs the selected provider and returns its result', async () => {
+    const { web } = await mountWeb()
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(
+      searchResult('exa', { content: 'answer', sources: [{ url: 'https://a' }] }),
+    )))
+    const result = await web.search({ query: 'q' })
+    expect(result.content).toBe('answer')
+    expect(result.sources).toEqual([{ url: 'https://a' }])
+  })
+
+  it('propagates the abort signal to the provider', async () => {
+    const { web } = await mountWeb()
+    const seen: (AbortSignal | undefined)[] = []
+    web.registerSearchProvider({
+      id: 'exa',
+      available: () => available,
+      search: (_request, signal) => { seen.push(signal); return Promise.resolve(searchResult('exa')) },
+    })
+    const controller = new AbortController()
+    await web.search({ query: 'q' }, controller.signal)
+    expect(seen[0]).toBe(controller.signal)
+  })
+})
+
+describe('WebRuntime maxResults enforcement', () => {
+  it('truncates sources and sets truncated when a provider over-returns', async () => {
+    const { web } = await mountWeb()
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa', {
+      sources: [{ url: 'https://1' }, { url: 'https://2' }, { url: 'https://3' }],
+    }))))
+    const result = await web.search({ query: 'q', maxResults: 2 })
+    expect(result.sources).toHaveLength(2)
+    expect(result.truncated).toBe(true)
+  })
+
+  it('leaves truncated false when within the bound', async () => {
+    const { web } = await mountWeb()
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa', {
+      sources: [{ url: 'https://1' }],
+    }))))
+    const result = await web.search({ query: 'q', maxResults: 8 })
+    expect(result.sources).toHaveLength(1)
+    expect(result.truncated).toBe(false)
+  })
+
+  it('does not bound when maxResults is omitted', async () => {
+    const { web } = await mountWeb()
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa', {
+      sources: [{ url: 'https://1' }, { url: 'https://2' }],
+    }))))
+    const result = await web.search({ query: 'q' })
+    expect(result.sources).toHaveLength(2)
+    expect(result.truncated).toBe(false)
+  })
+})
+
+describe('WebRuntime search concurrency', () => {
+  it('queues provider calls above the Host-wide limit and admits them FIFO', async () => {
+    const { web } = await mountWeb({ searchMaxConcurrent: 2 })
+    const started: string[] = []
+    const releases: Array<() => void> = []
+    web.registerSearchProvider(makeSearchProvider('search', available, request => new Promise((resolve) => {
+      started.push(request.query)
+      releases.push(() => { resolve(searchResult(request.query)) })
+    })))
+
+    const one = web.search({ query: 'one' })
+    const two = web.search({ query: 'two' })
+    const three = web.search({ query: 'three' })
+    await vi.waitFor(() => { expect(started).toEqual(['one', 'two']) })
+    releases[0]?.()
+    await vi.waitFor(() => { expect(started).toEqual(['one', 'two', 'three']) })
+    releases[1]?.()
+    releases[2]?.()
+    await expect(Promise.all([one, two, three])).resolves.toHaveLength(3)
+  })
+
+  it('removes an aborted search from the queue', async () => {
+    const { web } = await mountWeb({ searchMaxConcurrent: 1 })
+    let releaseFirst!: () => void
+    const started: string[] = []
+    web.registerSearchProvider(makeSearchProvider('search', available, request => new Promise((resolve) => {
+      started.push(request.query)
+      if (request.query === 'one') releaseFirst = () => { resolve(searchResult('one')) }
+      else resolve(searchResult(request.query))
+    })))
+    const one = web.search({ query: 'one' })
+    const controller = new AbortController()
+    const two = web.search({ query: 'two' }, controller.signal)
+    const three = web.search({ query: 'three' })
+    await vi.waitFor(() => { expect(started).toEqual(['one']) })
+    controller.abort(new Error('cancelled'))
+    await expect(two).rejects.toMatchObject({ code: 'WEB_ABORTED' })
+    releaseFirst()
+    await expect(Promise.all([one, three])).resolves.toHaveLength(2)
+    expect(started).toEqual(['one', 'three'])
+  })
+})
+
+describe('WebRuntime fetch capability', () => {
+  it('resolves and runs the fetch provider independently of search', async () => {
+    const { web } = await mountWeb()
+    web.registerFetchProvider(makeFetchProvider('http', available, fetchResult('http')))
+    const result = await web.fetch({ url: 'https://example.com' })
+    expect(result.body.content).toBe('http')
+    expect(result.statusCode).toBe(200)
+  })
+
+  it('throws WEB_PROVIDER_UNAVAILABLE for fetch when no fetch provider is registered', async () => {
+    const { web } = await mountWeb()
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    await expect(web.fetch({ url: 'https://example.com' })).rejects.toThrow(
       expect.objectContaining({ code: 'WEB_PROVIDER_UNAVAILABLE' }),
     )
   })
+})
 
-  it('keeps error codes', () => {
-    expect(new WebError('invalid', 'WEB_INVALID_URL').code).toBe('WEB_INVALID_URL')
+describe('WebError', () => {
+  it('is a HarnessError carrying its code', () => {
+    const error = new WebError('boom', 'WEB_INVALID_URL')
+    expect(error.code).toBe('WEB_INVALID_URL')
+    expect(error.name).toBe('WebError')
   })
 })

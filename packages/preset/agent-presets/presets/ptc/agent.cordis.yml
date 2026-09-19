@@ -252,8 +252,8 @@
   config:
     allowParallelInProgress: true
 
-# The `web` service and fetch provider stay in the host composition; only
-# the model-facing tool is per-session.
+# The `web` service and SearXNG/fetch providers stay in the host composition;
+# the model-facing tools are per-session.
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
 

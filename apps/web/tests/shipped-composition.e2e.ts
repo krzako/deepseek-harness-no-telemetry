@@ -29,9 +29,8 @@ const FILE_REFERENCE_PROMPT = fileURLToPath(new URL(
  * ripgrep-dependent pair below. The absences are deliberate, not incidental
  * gaps: the `cordis_*` toolset executes model-written JavaScript that no
  * sandbox row confines, and `mcp_*` servers spawn outside `ctx.shell`.
- * `web_fetch` is present because public-address enforcement and one-shot
- * approval now confine its model-selected request target. The composition
- * Agent Note owns the rationale and its sources.
+ * `web_search` uses the configured SearXNG instance. `web_fetch` uses the
+ * public-address policy for model-selected request targets.
  */
 const EXPECTED_TOOLS = [
   'ask_user_question',
@@ -55,6 +54,7 @@ const EXPECTED_TOOLS = [
   'todo_write',
   'update_goal',
   'web_fetch',
+  'web_search',
   'workflow',
   'write',
 ]

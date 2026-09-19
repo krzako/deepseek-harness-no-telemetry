@@ -55,7 +55,7 @@ export type {
 } from './SearchBlock.tsx'
 export { WebBlock } from './WebBlock.tsx'
 export type {
-  WebBlockProps, WebFetchBlockProps, WebBlockLabels,
+  WebBlockProps, WebSearchBlockProps, WebFetchBlockProps, WebSourceView, WebBlockLabels,
 } from './WebBlock.tsx'
 export { CodeBlock } from './markdown/CodeBlock.tsx'
 export type { CodeBlockProps } from './markdown/CodeBlock.tsx'

@@ -4,10 +4,19 @@
 export type PluginsSettingsLocaleKey =
   | 'nav' | 'title' | 'intro' | 'tabs' | 'configurableTab' | 'empty'
   | 'overridden' | 'reset' | 'readOnly' | 'expand' | 'collapse'
-  | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed' | 'invalidNumber'
+  | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed' | 'invalidNumber' | 'positiveIntegerInvalid'
   | 'bashTitle' | 'bashDescription' | 'bashTimeoutMs' | 'bashTimeoutMsHint'
   | 'bashMaxOutputBytes' | 'bashMaxOutputBytesHint'
   | 'agentLoopTitle' | 'agentLoopDescription' | 'agentLoopMaxParallel' | 'agentLoopMaxParallelHint'
+  | 'webSearchTitle' | 'webSearchDescription' | 'webSearchMaxResults' | 'webSearchMaxResultsHint'
+  | 'webSearchMaxQueries' | 'webSearchMaxQueriesHint' | 'webSearchMaxConcurrent' | 'webSearchMaxConcurrentHint'
+  | 'webSearchTimeoutMs' | 'webSearchTimeoutMsHint'
+  | 'searxngTitle' | 'searxngDescription' | 'searxngBaseURL' | 'searxngBaseURLHint' | 'searxngBaseURLInvalid'
+  | 'searxngBaseURLPlaceholder' | 'searxngLanguage' | 'searxngLanguageHint' | 'searxngLanguagePlaceholder' | 'searxngCategories'
+  | 'searxngCategoriesHint' | 'searxngCategoriesPlaceholder'
+  | 'searxngSafesearch' | 'searxngSafesearchHint' | 'searxngSafesearchInvalid' | 'searxngTextInvalid'
+  | 'searxngTestConnection' | 'searxngTestingConnection' | 'searxngConnectionSucceeded'
+  | 'searxngConnectionFailed'
   | 'subagentModelSelectionTitle' | 'subagentModelSelectionDescription'
   | 'subagentModelSelectionToggle' | 'subagentModelSelectionChoose' | 'subagentModelSelectionAllowed'
   | 'subagentModelSelectionLoading' | 'subagentModelSelectionLoadFailed' | 'subagentModelSelectionRetry'
@@ -34,6 +43,7 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   unsaved: 'Unsaved',
   saveFailed: 'The deployment did not accept these values; they were left for you to correct.',
   invalidNumber: 'Enter a number, or leave blank to use the default.',
+  positiveIntegerInvalid: 'Enter a positive whole number, or leave blank to use the default.',
   bashTitle: 'Shell',
   bashDescription: 'Limits every command the agent runs.',
   bashTimeoutMs: 'Command timeout (ms)',
@@ -44,6 +54,36 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   agentLoopDescription: 'How the agent dispatches tool calls.',
   agentLoopMaxParallel: 'Parallel tool calls',
   agentLoopMaxParallelHint: 'Upper bound on parallel-safe calls running at once within one step.',
+  webSearchTitle: 'Web Search',
+  webSearchDescription: 'Control how much search work agents may run at once.',
+  webSearchMaxResults: 'Maximum results',
+  webSearchMaxResultsHint: 'Combined source limit returned by one web_search call.',
+  webSearchMaxQueries: 'Maximum queries',
+  webSearchMaxQueriesHint: 'Maximum query variants accepted by one web_search call.',
+  webSearchMaxConcurrent: 'Concurrent requests',
+  webSearchMaxConcurrentHint: 'Maximum SearXNG requests running across all agents and sessions.',
+  webSearchTimeoutMs: 'Search timeout (ms)',
+  webSearchTimeoutMsHint: 'Maximum duration of one web_search call, including time waiting for a request slot.',
+  searxngTitle: 'SearXNG',
+  searxngDescription: 'Configure the search instance and its default query options.',
+  searxngBaseURL: 'Instance URL',
+  searxngBaseURLHint: 'HTTP(S) root of the SearXNG instance, including any path prefix.',
+  searxngBaseURLInvalid: 'Enter a valid HTTP(S) instance URL, or leave blank to use the deployment value.',
+  searxngBaseURLPlaceholder: 'http://localhost:8080',
+  searxngLanguage: 'Language',
+  searxngLanguageHint: 'Language sent with every search. Use all for every language, en for English, or pl for Polish. Blank restores the deployment default.',
+  searxngLanguagePlaceholder: 'all',
+  searxngCategories: 'Categories',
+  searxngCategoriesHint: 'Comma-separated SearXNG categories, for example general,news. Blank uses the instance default.',
+  searxngCategoriesPlaceholder: 'general,news',
+  searxngSafesearch: 'SafeSearch level',
+  searxngSafesearchHint: '0 disables filtering, 1 uses moderate filtering, and 2 uses strict filtering. Blank uses the instance default.',
+  searxngSafesearchInvalid: 'Enter 0, 1, or 2; leave blank to use the instance default.',
+  searxngTextInvalid: 'Enter text, or leave blank to use the instance default.',
+  searxngTestConnection: 'Test connection',
+  searxngTestingConnection: 'Testing…',
+  searxngConnectionSucceeded: 'Connection successful.',
+  searxngConnectionFailed: 'Connection failed. Check the instance URL and SearXNG JSON search support.',
   subagentModelSelectionTitle: 'Subagent',
   subagentModelSelectionDescription: 'Control which models agents may choose for subagents.',
   subagentModelSelectionToggle: 'Allow agents to choose models for subagents',
@@ -80,6 +120,7 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   unsaved: '未保存',
   saveFailed: '本部署没有接受这些值，已保留供你修改。',
   invalidNumber: '请填数字；留空表示使用默认值。',
+  positiveIntegerInvalid: '请输入正整数；留空表示使用默认值。',
   bashTitle: '终端',
   bashDescription: '限制 agent 运行的每一条命令。',
   bashTimeoutMs: '命令超时（毫秒）',
@@ -90,6 +131,36 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   agentLoopDescription: 'Agent 如何派发工具调用。',
   agentLoopMaxParallel: '并行工具调用数',
   agentLoopMaxParallelHint: '同一步内最多同时运行多少个可并行的调用。',
+  webSearchTitle: '网页搜索',
+  webSearchDescription: '控制 Agent 可同时执行多少搜索工作。',
+  webSearchMaxResults: '最大结果数',
+  webSearchMaxResultsHint: '一次 web_search 调用返回的合并来源上限。',
+  webSearchMaxQueries: '最大查询数',
+  webSearchMaxQueriesHint: '一次 web_search 调用可接受的查询变体上限。',
+  webSearchMaxConcurrent: '并发请求数',
+  webSearchMaxConcurrentHint: '所有 Agent 和会话中同时运行的 SearXNG 请求上限。',
+  webSearchTimeoutMs: '搜索超时（毫秒）',
+  webSearchTimeoutMsHint: '一次 web_search 调用的最长时间，包括等待请求槽的时间。',
+  searxngTitle: 'SearXNG',
+  searxngDescription: '配置搜索实例及其默认查询选项。',
+  searxngBaseURL: '实例 URL',
+  searxngBaseURLHint: 'SearXNG 实例的 HTTP(S) 根地址，可包含路径前缀。',
+  searxngBaseURLInvalid: '请输入有效的 HTTP(S) 实例 URL；留空则使用部署值。',
+  searxngBaseURLPlaceholder: 'http://localhost:8080',
+  searxngLanguage: '语言',
+  searxngLanguageHint: '每次搜索发送的语言。all 表示所有语言，en 表示英语，pl 表示波兰语；留空则恢复部署默认值。',
+  searxngLanguagePlaceholder: 'all',
+  searxngCategories: '类别',
+  searxngCategoriesHint: '逗号分隔的 SearXNG 类别，例如 general,news；留空则使用实例默认值。',
+  searxngCategoriesPlaceholder: 'general,news',
+  searxngSafesearch: '安全搜索级别',
+  searxngSafesearchHint: '0 为关闭过滤，1 为适中过滤，2 为严格过滤；留空则使用实例默认值。',
+  searxngSafesearchInvalid: '请输入 0、1 或 2；留空则使用实例默认值。',
+  searxngTextInvalid: '请输入文本；留空则使用实例默认值。',
+  searxngTestConnection: '测试连接',
+  searxngTestingConnection: '正在测试…',
+  searxngConnectionSucceeded: '连接成功。',
+  searxngConnectionFailed: '连接失败。请检查实例 URL 以及 SearXNG 的 JSON 搜索支持。',
   subagentModelSelectionTitle: 'Subagent',
   subagentModelSelectionDescription: '控制 Agent 为 Subagent 选择模型的权限。',
   subagentModelSelectionToggle: '允许 Agent 为 Subagent 选择模型',

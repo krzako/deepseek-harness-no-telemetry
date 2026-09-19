@@ -13,12 +13,18 @@ import type { ConfigurablePluginsTabProps } from '../src/client/ConfigurablePlug
 import { PluginsSettingsSection } from '../src/client/PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionProps, PluginsSettingsTabEntry } from '../src/client/PluginsSettingsSection.tsx'
 import { SubagentModelSelectionCard } from '../src/client/SubagentModelSelectionCard.tsx'
+import { SearxngCard } from '../src/client/SearxngCard.tsx'
+import type { SearxngCardProps } from '../src/client/SearxngCard.tsx'
+import { WebSearchCard } from '../src/client/WebSearchCard.tsx'
+import type { WebSearchCardProps } from '../src/client/WebSearchCard.tsx'
 import type { SubagentModelSelectionCardProps } from '../src/client/SubagentModelSelectionCard.tsx'
 import type { AgentLoopCardState } from '../src/client/agent-loop-card-controller.ts'
 import type { BashCardState } from '../src/client/bash-card-controller.ts'
 import type { CardFieldState, CardShell } from '../src/client/card-form.ts'
 import type { ConfigurablePluginsTabState } from '../src/client/tab-store.ts'
 import type { SubagentModelSelectionCardState } from '../src/client/subagent-model-selection-card-controller.ts'
+import type { SearxngCardState } from '../src/client/searxng-card-controller.ts'
+import type { WebSearchCardState } from '../src/client/web-search-card-controller.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -106,6 +112,36 @@ function renderSubagentModelSelection(state: Partial<SubagentModelSelectionCardS
     useSubagentModelSelectionCard: bindSnapshotSelector(store),
   } as unknown as SubagentModelSelectionCardProps
   render(<SubagentModelSelectionCard {...props} />)
+  return actions
+}
+
+function renderSearxng(state: Partial<SearxngCardState> = {}) {
+  const store = createSnapshotStore<SearxngCardState>({
+    ...settled,
+    baseURL: field('http://localhost:8080'),
+    language: field('pl-PL'),
+    categories: field('general,news'),
+    safesearch: field('1'),
+    ...state,
+  })
+  const actions = { ...cardActions(), testConnection: vi.fn(() => Promise.resolve(true)) }
+  const props = { ...actions, t, useSearxngCard: bindSnapshotSelector(store) } as unknown as SearxngCardProps
+  render(<SearxngCard {...props} />)
+  return actions
+}
+
+function renderWebSearch(state: Partial<WebSearchCardState> = {}) {
+  const store = createSnapshotStore<WebSearchCardState>({
+    ...settled,
+    searchMaxResults: field('12'),
+    searchMaxQueries: field('4'),
+    searchMaxConcurrent: field('4'),
+    searchTimeoutMs: field('30000'),
+    ...state,
+  })
+  const actions = cardActions()
+  const props = { ...actions, t, useWebSearchCard: bindSnapshotSelector(store) } as unknown as WebSearchCardProps
+  render(<WebSearchCard {...props} />)
   return actions
 }
 
@@ -345,6 +381,110 @@ describe('BashCard', () => {
 
     expect(screen.getByLabelText(en.bashTimeoutMs)).toBeTruthy()
     expect(screen.getByText(en.saveFailed)).toBeTruthy()
+  })
+})
+
+describe('SearxngCard', () => {
+  it('reveals and addresses every supported provider option', () => {
+    const actions = renderSearxng()
+    fireEvent.click(screen.getByText(en.searxngTitle))
+
+    expect(screen.getByLabelText(en.searxngBaseURL)).toHaveProperty('value', 'http://localhost:8080')
+    expect(screen.getByLabelText(en.searxngLanguage)).toHaveProperty('value', 'pl-PL')
+    expect(screen.getByLabelText(en.searxngCategories)).toHaveProperty('value', 'general,news')
+    expect(screen.getByLabelText(en.searxngSafesearch)).toHaveProperty('value', '1')
+
+    fireEvent.change(screen.getByLabelText(en.searxngBaseURL), { target: { value: 'https://search.example' } })
+    fireEvent.change(screen.getByLabelText(en.searxngLanguage), { target: { value: 'en-US' } })
+    fireEvent.change(screen.getByLabelText(en.searxngCategories), { target: { value: 'news' } })
+    fireEvent.change(screen.getByLabelText(en.searxngSafesearch), { target: { value: '2' } })
+
+    expect(actions.edit.mock.calls).toEqual([
+      ['baseURL', 'https://search.example'],
+      ['language', 'en-US'],
+      ['categories', 'news'],
+      ['safesearch', '2'],
+    ])
+  })
+
+  it('shows field-specific validation and reset controls', () => {
+    const actions = renderSearxng({
+      invalid: true,
+      baseURL: field('ftp://search.example', { invalid: true }),
+      safesearch: field('3', { invalid: true, overridden: true }),
+    })
+    fireEvent.click(screen.getByText(en.searxngTitle))
+
+    expect(screen.getByText(en.searxngBaseURLInvalid)).toBeTruthy()
+    expect(screen.getByText(en.searxngSafesearchInvalid)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.reset }))
+    expect(actions.resetField).toHaveBeenCalledWith('safesearch')
+  })
+
+  it('tests the current form values and reports success', async () => {
+    const actions = renderSearxng()
+    fireEvent.click(screen.getByText(en.searxngTitle))
+
+    fireEvent.click(screen.getByRole('button', { name: en.searxngTestConnection }))
+    expect(screen.getByRole('button', { name: en.searxngTestingConnection })).toHaveProperty('disabled', true)
+
+    await vi.waitFor(() => { expect(screen.getByText(en.searxngConnectionSucceeded)).toBeTruthy() })
+    expect(actions.testConnection).toHaveBeenCalledOnce()
+    expect(actions.testConnection).toHaveBeenCalledWith({
+      baseURL: 'http://localhost:8080',
+      language: 'pl-PL',
+      categories: 'general,news',
+      safesearch: 1,
+    }, expect.any(AbortSignal))
+  })
+
+  it('tests valid pending settings without saving them first', async () => {
+    const actions = renderSearxng({
+      dirty: true,
+      baseURL: field('https://draft.example/search'),
+      language: field('all'),
+      categories: field('news'),
+      safesearch: field('2'),
+    })
+    fireEvent.click(screen.getByText(en.searxngTitle))
+
+    fireEvent.click(screen.getByRole('button', { name: en.searxngTestConnection }))
+    await vi.waitFor(() => { expect(actions.testConnection).toHaveBeenCalledOnce() })
+    expect(actions.testConnection).toHaveBeenCalledWith({
+      baseURL: 'https://draft.example/search',
+      language: 'all',
+      categories: 'news',
+      safesearch: 2,
+    }, expect.any(AbortSignal))
+  })
+
+  it('reports a rejected connection test', async () => {
+    const actions = renderSearxng()
+    actions.testConnection.mockRejectedValue(new Error('offline'))
+    fireEvent.click(screen.getByText(en.searxngTitle))
+
+    fireEvent.click(screen.getByRole('button', { name: en.searxngTestConnection }))
+
+    await vi.waitFor(() => { expect(screen.getByText(en.searxngConnectionFailed)).toBeTruthy() })
+  })
+})
+
+describe('WebSearchCard', () => {
+  it('shows every search limit and routes edits to its form', () => {
+    const actions = renderWebSearch()
+    fireEvent.click(screen.getByText(en.webSearchTitle))
+
+    expect(screen.getByLabelText(en.webSearchMaxResults)).toHaveProperty('value', '12')
+    expect(screen.getByLabelText(en.webSearchMaxQueries)).toHaveProperty('value', '4')
+    expect(screen.getByLabelText(en.webSearchMaxConcurrent)).toHaveProperty('value', '4')
+    expect(screen.getByLabelText(en.webSearchTimeoutMs)).toHaveProperty('value', '30000')
+
+    fireEvent.change(screen.getByLabelText(en.webSearchMaxResults), { target: { value: '20' } })
+    fireEvent.change(screen.getByLabelText(en.webSearchMaxConcurrent), { target: { value: '6' } })
+    expect(actions.edit.mock.calls).toEqual([
+      ['searchMaxResults', '20'],
+      ['searchMaxConcurrent', '6'],
+    ])
   })
 })
 

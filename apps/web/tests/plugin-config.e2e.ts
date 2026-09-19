@@ -76,17 +76,86 @@ describe('web e2e: plugin configuration section', () => {
     const dialog = await openPlugins()
 
     // Every card the shipped web composition exposes: the shell executor, the
-    // agent loop, subagent selection, and the DeepSeek search provider.
+    // agent loop, subagent selection, and the configured web plugins.
     await dialog.getByText('Subagent', { exact: true }).waitFor({ timeout: 10_000 })
     expect(await dialog.getByRole('button', { name: '展开设置: Subagent' }).count()).toBe(1)
     await dialog.getByText('终端', { exact: true }).waitFor({ timeout: 10_000 })
     expect(await dialog.getByText('Agent 循环', { exact: true }).count()).toBe(1)
     expect(await dialog.getByText('网页搜索', { exact: true }).count()).toBe(1)
+    expect(await dialog.getByText('SearXNG', { exact: true }).count()).toBe(1)
     // Collapsed: a card's fields appear only once it is expanded.
     expect(await dialog.getByLabel('命令超时（毫秒）').count()).toBe(0)
 
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(SECTION_EXPECTED, snapshot, MODE)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
+  it('persists every Web Search limit', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-config-web-search'))
+    const dialog = await openPlugins()
+    await dialog.getByText('网页搜索', { exact: true }).click()
+
+    await dialog.getByLabel('最大结果数').fill('18')
+    await dialog.getByLabel('最大查询数').fill('3')
+    await dialog.getByLabel('并发请求数').fill('2')
+    await dialog.getByLabel('搜索超时（毫秒）').fill('20000')
+    await dialog.getByRole('button', { name: '保存', exact: true }).click()
+
+    await expect.poll(async () => (await settingsDocument()).includes('web-search:'), { timeout: 10_000 })
+      .toBe(true)
+    const document = await settingsDocument()
+    expect(document).toContain('searchMaxResults: 18')
+    expect(document).toContain('searchMaxQueries: 3')
+    expect(document).toContain('searchMaxConcurrent: 2')
+    expect(document).toContain('searchTimeoutMs: 20000')
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
+  it('persists every SearXNG provider option', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-config-searxng'))
+    const dialog = await openPlugins()
+    await dialog.getByText('SearXNG', { exact: true }).click()
+
+    await dialog.getByLabel('实例 URL').fill('http://127.0.0.1:1/searxng')
+    await dialog.getByLabel('语言').fill('pl')
+    await dialog.getByLabel('类别').fill('general,news')
+    await dialog.getByLabel('安全搜索级别').fill('2')
+    await dialog.getByRole('button', { name: '保存', exact: true }).click()
+
+    await expect.poll(async () => {
+      const document = await settingsDocument()
+      return document.includes('web-search-searxng:')
+        && document.includes('baseURL: http://127.0.0.1:1/searxng')
+        && document.includes('language: pl')
+        && document.includes('categories: general,news')
+        && document.includes('safesearch: 2')
+    }, { timeout: 10_000 }).toBe(true)
+    const document = await settingsDocument()
+    expect(document).toContain('baseURL: http://127.0.0.1:1/searxng')
+    expect(document).toContain('language: pl')
+    expect(document).toContain('categories: general,news')
+    expect(document).toContain('safesearch: 2')
+
+    const expand = dialog.getByRole('button', { name: '展开设置: SearXNG' })
+    await expand.waitFor({ timeout: 5_000 })
+    await expand.click()
+    expect(await dialog.getByLabel('实例 URL').inputValue()).toBe('http://127.0.0.1:1/searxng')
+    expect(await dialog.getByLabel('语言').inputValue()).toBe('pl')
+    expect(await dialog.getByLabel('类别').inputValue()).toBe('general,news')
+    expect(await dialog.getByLabel('安全搜索级别').inputValue()).toBe('2')
+    await dialog.getByLabel('实例 URL').fill('http://127.0.0.1:2/draft')
+    const connectionRequest = page.waitForRequest(request =>
+      request.url().endsWith('/api/web/testSearchConnection') && request.method() === 'POST')
+    await dialog.getByRole('button', { name: '测试连接', exact: true }).click()
+    const request = await connectionRequest
+    const envelope = request.postDataJSON() as {
+      payload: { args: { request: { options: Array<{ name: string; value: string }> } } }
+    }
+    expect(envelope.payload.args.request.options).toContainEqual({
+      name: 'baseURL', value: 'http://127.0.0.1:2/draft',
+    })
+    await dialog.getByText('连接失败。请检查实例 URL 以及 SearXNG 的 JSON 搜索支持。').waitFor({ timeout: 10_000 })
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
