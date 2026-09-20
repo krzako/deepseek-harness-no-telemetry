@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-agent-default-model` 提供部署的默认模型选择——提供方、模型与可选的推理（reasoning）强度——agent 入口在全新会话没有自己的选择时应用它。`dsh --profile headless` 这类直接入口与 Host 支撑的入口读取 `ctx.agentDefaultModel`，而不是各自持有平行默认值，因此一个组合配置项就能控制新 agent 从哪个模型开始。挂载的设置提供方会把用户选择叠加在组合配置项之上，保存的更改在下一次读取时可见。它是单一的进程级默认值：按会话的模型选择仍由入口负责。想要为新建 agent 所用模型设置单一位置时，请选择本包。
+`dsh-agent-default-model` 提供部署默认的 agent 与模型选择——可选 agent、provider、model 和推理强度——入口在全新会话没有自己的选择时应用它。`dsh --profile headless` 这类直接入口与 Host 支撑的入口读取 `ctx.agentDefaultModel`，而不是各自持有平行默认值，因此一个组合配置项就能控制新 agent 从哪个模型开始。挂载的设置提供方会把用户选择叠加在组合配置项之上，保存的更改在下一次读取时可见。它是单一的进程级默认值：按会话的模型选择仍由入口负责。
 
 ## 目录
 
@@ -34,6 +34,7 @@ kind: "package-reference"
 ```yaml
 - name: '@deepseek-ai/dsh-agent-default-model'
   config:
+    agent: standard
     provider: deepseek
     model: deepseek-chat
 ```
@@ -41,13 +42,14 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `provider` | 必填 | 新 agent 使用的已注册提供方路由 |
+| `agent` | `standard` | `standard` 或 `codex`；区分名称相同的上游 provider |
 | `model` | 必填 | 新 agent 使用的、由提供方持有的模型 id |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-agent-default-model)是每个受支持字段的穷尽式真源。`reasoningEffort` 刻意不是配置字段：它属于设置层，因此完整保存的选择可以在下一个选定的模型没有推理强度时清除旧值，而组合配置值会再次被继承。
 
 ### 读取与更改默认值
 
-`currentSelection()` 为新创建的 agent 返回一份独立的 `{ provider, model, reasoningEffort? }`；`saveSelection()` 为后续 agent 保存完整选择。
+`currentSelection()` 为新创建的 agent 返回一份独立的运行时 `{ provider, model, reasoningEffort? }`；`saveSelection()` 为后续 agent 保存完整选择。settings section 存储 `agent: codex`、上游 provider id 与原始 model id；运行时将它们解析为 `codex:<provider>` driver 路由和编码后的 gateway model id。省略 `agent` 则使用标准循环。
 
 ```text
 const selection = ctx.agentDefaultModel.currentSelection()

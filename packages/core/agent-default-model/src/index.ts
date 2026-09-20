@@ -22,6 +22,8 @@ export const AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE = 'agent-default-model'
 
 /** Stored and composed default model selection. */
 export interface AgentDefaultModelSettings {
+  /** Execution engine; absent selects the standard loop for existing settings. */
+  agent?: 'standard' | 'codex'
   /** Registered provider route. */
   provider: string
   /** Provider-owned model id. */
@@ -32,6 +34,7 @@ export interface AgentDefaultModelSettings {
 
 /** Schema of the default Agent model settings section. */
 export const AGENT_DEFAULT_MODEL_SETTINGS_SCHEMA: z<AgentDefaultModelSettings> = z.object({
+  agent: z.union(['standard', 'codex']),
   provider: z.string().required(),
   model: z.string().required(),
   reasoningEffort: z.string(),
@@ -39,6 +42,8 @@ export const AGENT_DEFAULT_MODEL_SETTINGS_SCHEMA: z<AgentDefaultModelSettings> =
 
 /** Composition entry for the default model selection. */
 export interface Config {
+  /** Execution engine for the composition default. */
+  agent?: 'standard' | 'codex'
   /** Registered provider route. */
   provider: string
   /** Provider-owned model id. */
@@ -47,9 +52,12 @@ export interface Config {
 
 /** Project stored settings onto the Agent-facing selection type. */
 function selection(settings: AgentDefaultModelSettings): ModelSelection {
+  const codex = settings.agent === 'codex'
   return {
-    provider: settings.provider,
-    model: settings.model,
+    provider: codex ? `codex:${settings.provider}` : settings.provider,
+    model: codex
+      ? `${encodeURIComponent(settings.provider)}/${encodeURIComponent(settings.model)}`
+      : settings.model,
     ...settings.reasoningEffort === undefined
       ? {}
       : { reasoningEffort: ReasoningEffortId(settings.reasoningEffort) },
@@ -63,6 +71,7 @@ function selection(settings: AgentDefaultModelSettings): ModelSelection {
  */
 export class AgentDefaultModelConfig extends Service {
   static Config: z<Config> = z.object({
+    agent: z.union(['standard', 'codex']),
     provider: z.string().required(),
     model: z.string().required(),
   })
@@ -71,7 +80,11 @@ export class AgentDefaultModelConfig extends Service {
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'agentDefaultModel')
-    const entry: AgentDefaultModelSettings = { provider: config.provider, model: config.model }
+    const entry: AgentDefaultModelSettings = {
+      ...(config.agent === undefined ? {} : { agent: config.agent }),
+      provider: config.provider,
+      model: config.model,
+    }
     this.source = () => entry
     ctx.inject(['settings'], (settingsCtx) => {
       settingsCtx.settings.installSection(ctx, AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE, AGENT_DEFAULT_MODEL_SETTINGS_SCHEMA, entry, {
@@ -98,9 +111,15 @@ export class AgentDefaultModelConfig extends Service {
    * @returns fulfillment after the optional settings write settles.
    */
   async saveSelection(next: ModelSelection): Promise<void> {
+    const codexProvider = next.provider.startsWith('codex:') ? next.provider.slice('codex:'.length) : undefined
+    const encodedPrefix = codexProvider === undefined ? undefined : `${encodeURIComponent(codexProvider)}/`
+    if (encodedPrefix !== undefined && !next.model.startsWith(encodedPrefix)) {
+      throw new Error(`Codex model ${JSON.stringify(next.model)} does not belong to ${JSON.stringify(codexProvider)}`)
+    }
     await this.ctx.get('settings')?.replace(AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE, {
-      provider: next.provider,
-      model: next.model,
+      agent: codexProvider === undefined ? 'standard' : 'codex',
+      provider: codexProvider ?? next.provider,
+      model: encodedPrefix === undefined ? next.model : decodeURIComponent(next.model.slice(encodedPrefix.length)),
       ...next.reasoningEffort === undefined ? {} : { reasoningEffort: String(next.reasoningEffort) },
     })
   }

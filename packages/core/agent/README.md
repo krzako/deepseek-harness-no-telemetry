@@ -101,6 +101,8 @@ The package is built on one separation: the public `Agent` surface and registry 
 
 `AgentRegistry` keeps one entry per live agent with its carrier and creator relation. `register()` records an already-constructed agent; the async factory uses the split `enter()`/`announce()` pair so setup and publication stay rollback-covered. A detach requested during a creation dispatch waits for that dispatch to unwind, and each detach is bound to the exact entry, so a stale disposer cannot remove a later same-id replacement. Teardown order is stop-and-drain the loop, unwind the scope, detach the agent, detach the session; the id becomes reusable after private cleanup.
 
+An exact provider driver registered with `setDriverFactory()` takes precedence over the optional `setDriverSelector()` policy. The selector may choose a full driver for another provider route before the standard loop is constructed; returning `undefined` leaves the standard loop in charge. Both registrations follow their owner effects.
+
 ### Initiator scope
 
 Each driver runs its complete lifetime inside `ctx.agents.withInitiator(agent, ...)`, so inherited async chains observe that agent; `withoutInitiator()` hides it for unrelated process-local work such as shared timers. The boundary is process-local attribution only — ambient presence is neither liveness proof nor authorization, and explicit identity stays authoritative at worker, process, persistence, and wire boundaries. Teardown rejects new boundaries, lets returned-Promise boundaries drain, then disables the underlying storage. The [initiator-scope decision](../../../.agents/notes/implemented/architecture/2026-07-15-agent-initiator-scope.md) owns the detailed contract.

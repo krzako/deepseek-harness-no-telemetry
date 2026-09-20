@@ -119,6 +119,9 @@ declare module './types.ts' {
     /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
     readonly ctx: Context
 
+    /** Optional driver capability: select the model used by subsequent turns of this live Agent. */
+    selectModelForNextTurn?(model: string, reasoningEffort?: ReasoningEffortId): void
+
     /**
    * Clear queued and steering work — unless `keepInbox` — and abort the active
    * turn or between-turn task. The first cause wins for that activity. With no

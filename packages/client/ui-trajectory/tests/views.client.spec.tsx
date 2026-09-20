@@ -1266,6 +1266,30 @@ describe('timeline projection', () => {
 })
 
 describe('TrajectoryView state', () => {
+  it('labels a session only after a durable Codex thread binding is projected', () => {
+    const props = {
+      ...standaloneProps(NODES),
+      ...standaloneHistory(historySnapshot(NODES)),
+      ...standaloneDuration(),
+    }
+    const projection = ((key: string, selector?: (value: unknown) => unknown) => {
+      const value = key === 'codexThreadBinding' ? true : undefined
+      return selector === undefined ? value : selector(value)
+    }) as UseProjection
+    const unboundProjection = ((key: string, selector?: (value: unknown) => unknown) => {
+      const value = key === 'codexThreadBinding' ? false : undefined
+      return selector === undefined ? value : selector(value)
+    }) as UseProjection
+    const view = render(<TrajectoryView {...props} />)
+    expect(screen.queryByText('Codex')).toBeNull()
+
+    view.rerender(<TrajectoryView {...props} useProjection={unboundProjection} />)
+    expect(screen.queryByText('Codex')).toBeNull()
+
+    view.rerender(<TrajectoryView {...props} useProjection={projection} />)
+    expect(screen.getByText('Codex').getAttribute('title')).toBe('此会话已绑定 Codex 线程')
+  })
+
   it('reveals resident history one bounded page at a time', async () => {
     const nodes: LegacyConversationSlice['nodes'] = Array.from({ length: 5_000 }, (_, index) => ({
       kind: 'user' as const,

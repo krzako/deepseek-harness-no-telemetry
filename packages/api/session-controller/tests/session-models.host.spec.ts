@@ -8,7 +8,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentDriverFactory } from '@deepseek-ai/dsh-agent'
 import AttachmentStore from '@deepseek-ai/dsh-attachment'
 import LlmRuntime, { LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
@@ -503,6 +503,49 @@ describe('Web session model selection', () => {
     })
     expect(currentSelection(ctx, sessionId))
       .toEqual({ provider: 'deepseek-official', model: 'private-preview', reasoningEffort: 'max' })
+    await ctx.fiber.dispose()
+  })
+
+  it('catalogs and selects a full-agent driver without registering an LLM adapter', async () => {
+    const { ctx, sessionId } = await harness()
+    const factory: AgentDriverFactory = {
+      catalog: {
+        name: 'Codex fork',
+        models: [{
+          id: 'codex-default',
+          name: 'Codex',
+          inputModalities: ['text', 'image'],
+          reasoning: { efforts: [{ id: 'high', name: 'high' }] },
+        }],
+      },
+      createDriver: () => { throw new Error('not used by this selector test') },
+    }
+    ctx.agents.setDriverFactory('codex', factory)
+    const remote = createSessionTestRemote(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const catalog = await buildModelCatalog(ctx)
+    expect(catalog.routableProviders).toContain('codex')
+    expect(catalog.groups).toContainEqual({
+      id: 'codex',
+      name: 'Codex fork',
+      models: [{
+        id: 'codex-default',
+        name: 'Codex',
+        reasoning: { efforts: [{ id: 'high', name: 'high' }] },
+      }],
+    })
+    const selected = expectValue(await remote.selectModel(request({
+      sessionId,
+      provider: 'codex',
+      model: 'codex-default',
+      reasoningEffort: 'high',
+    })))
+    expect(selected.selected).toEqual({
+      provider: 'codex', model: 'codex-default', reasoningEffort: 'high',
+    })
     await ctx.fiber.dispose()
   })
 

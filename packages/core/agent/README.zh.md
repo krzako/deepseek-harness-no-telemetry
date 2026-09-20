@@ -101,6 +101,8 @@ await handle.agent.whenIdle()
 
 `AgentRegistry` 为每个实时 agent 保留一个条目，含其载体与创建者关系。`register()` 记录一个已构造完成的 agent；异步工厂使用拆分的 `enter()`/`announce()` 对，使 setup 与发布始终处于回滚保护之下。创建分发期间请求的 detach 会等待该次分发退栈，且每次 detach 都绑定到确切条目，因此陈旧 disposer 无法移除之后出现的同 id 替代项。Teardown 顺序是停止并排空循环、撤销作用域、detach agent、detach 会话；私有清理完成后该 id 即可复用。
 
+通过 `setDriverFactory()` 注册的精确 provider 驱动优先于可选的 `setDriverSelector()` 策略。selector 可以在构造标准循环之前为另一条 provider 路由选择完整驱动；返回 `undefined` 则由标准循环负责。两种注册都随其拥有者的 effect 生命周期撤销。
+
 ### 发起方作用域
 
 每个驱动器在 `ctx.agents.withInitiator(agent, ...)` 内运行其完整生命周期，因此继承的异步链会观察到该 agent；`withoutInitiator()` 为共享定时器等无关的进程本地工作隐藏它。该边界只是进程本地归因——环境中的身份既不是存活证明，也不是授权，显式身份在 worker、进程、持久化与 wire 边界保持权威。Teardown 拒绝新边界，让返回 Promise 的边界排空，然后禁用底层存储。[发起方作用域决策](../../../.agents/notes/implemented/architecture/2026-07-15-agent-initiator-scope.zh.md) 拥有详细约定。

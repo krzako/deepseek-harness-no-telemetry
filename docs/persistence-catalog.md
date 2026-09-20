@@ -247,6 +247,124 @@ Types: [TokenUsage](subsystems/llm-streaming.md)
 
 Source: [`packages/core/session/src/types.ts:299`](../packages/core/session/src/types.ts)
 
+### `codex/*`
+
+<a id="codexerror--log-only"></a>
+
+#### `codex/error` — log-only
+
+```ts persistence-catalog
+/** Records a safe app-server failure summary for replay and diagnostics. */
+'codex/error': {
+  readonly version: 1
+  readonly turn: number
+  readonly stage: 'thread' | 'turn-start' | 'turn' | 'interaction' | 'transport'
+  readonly message: string
+  readonly code?: string
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:92`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexitemcompleted--log-only"></a>
+
+#### `codex/item/completed` — log-only
+
+```ts persistence-catalog
+/** Records the terminal structured snapshot of one native Codex item. */
+'codex/item/completed': {
+  readonly version: 1
+  readonly turn: number
+  readonly codexTurnId: CodexTurnId
+  readonly itemId: string
+  readonly itemType: string
+  readonly item: JsonValue
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:73`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexitemstarted--log-only"></a>
+
+#### `codex/item/started` — log-only
+
+```ts persistence-catalog
+/** Records the initial structured snapshot of one native Codex item. */
+'codex/item/started': {
+  readonly version: 1
+  readonly turn: number
+  readonly codexTurnId: CodexTurnId
+  readonly itemId: string
+  readonly itemType: string
+  readonly item: JsonValue
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:55`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexitemupdated--log-only"></a>
+
+#### `codex/item/updated` — log-only
+
+```ts persistence-catalog
+/** Records a later complete snapshot of an in-progress native Codex item. */
+'codex/item/updated': {
+  readonly version: 1
+  readonly turn: number
+  readonly codexTurnId: CodexTurnId
+  readonly itemId: string
+  readonly itemType: string
+  readonly item: JsonValue
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:64`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexthread-bound--log-only"></a>
+
+#### `codex/thread-bound` — log-only
+
+```ts persistence-catalog
+/** Commits the one persistent Codex thread owned by this DSH session. */
+'codex/thread-bound': CodexThreadBinding
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:47`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexturn-bound--log-only"></a>
+
+#### `codex/turn-bound` — log-only
+
+```ts persistence-catalog
+/** Associates one DSH turn with the app-server turn that executes it. */
+'codex/turn-bound': {
+  readonly version: 1
+  readonly turn: number
+  readonly codexTurnId: CodexTurnId
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:49`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexusage--log-only"></a>
+
+#### `codex/usage` — log-only
+
+```ts persistence-catalog
+/** Records provider token accounting without making it model history. */
+'codex/usage': {
+  readonly version: 1
+  readonly turn: number
+  readonly inputTokens: number
+  readonly cachedInputTokens: number
+  readonly cacheWriteInputTokens: number
+  readonly outputTokens: number
+  readonly reasoningOutputTokens: number
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:82`](../packages/core/agent-codex/src/types.ts)
+
 ### `command/*`
 
 <a id="commanddone--log-only"></a>

@@ -6,6 +6,8 @@ import type { NS } from './locales.ts'
 import css from './TrajectoryToolbar.module.css'
 
 export interface TrajectoryToolbarProps {
+  /** A durable Codex thread is bound to this session. */
+  codexBound: boolean
   /** Whether timeline blocks use recorded durations instead of equal widths. */
   actualDuration: boolean
   /** Select recorded-duration or equal-width blocks. */
@@ -36,6 +38,7 @@ export interface TrajectoryToolbarProps {
  * @returns the toolbar element.
  */
 export function TrajectoryToolbar({
+  codexBound,
   actualDuration,
   onActualDurationChange,
   actualTime,
@@ -51,6 +54,7 @@ export function TrajectoryToolbar({
   return (
     <div className={css.root} role="toolbar" aria-label={t('toolbar.aria')}>
       <div className={css.inner}>
+        {codexBound && <span className={css.driverBadge} title={t('toolbar.codexDescription')}>{t('toolbar.codex')}</span>}
         <div className={css.actions}>
           <button
             type="button"

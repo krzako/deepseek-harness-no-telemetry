@@ -26,6 +26,18 @@
   gap: 2px;
 }
 
+.driverBadge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--dsw-alias-state-business-primary);
+  border-radius: 3px;
+  color: var(--dsw-alias-state-business-primary);
+  font: var(--dsw-font-xxs-12);
+}
+
 .toggle {
   display: inline-flex;
   flex: none;

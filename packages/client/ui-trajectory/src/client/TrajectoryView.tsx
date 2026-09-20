@@ -7,6 +7,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InjectFace, PropsLocale, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type {} from '@deepseek-ai/dsh-agent-codex/types'
 import {
   TrajectoryTable,
   type TrajectoryRequestNumber,
@@ -127,7 +128,7 @@ function addUsage(
 }
 
 export function TrajectoryView({
-  useSession, useTrajectory, useDuration, loadOlder, loadImage, setActualDuration,
+  useSession, useProjection, useTrajectory, useDuration, loadOlder, loadImage, setActualDuration,
   viewRequest, completeViewRequest, renderSlot, t,
 }: ConvViewProps
   & PropsRenderSlots<'conversation.trajectory.images'>
@@ -156,6 +157,7 @@ export function TrajectoryView({
     readonly index: number
   } | null>(null)
   const completeInspection = useTrajectory(snapshot => snapshot)
+  const codexBound = useProjection('codexThreadBinding') === true
   const latestNodeSeq = completeInspection.eventNodes.at(-1)?.seq
   const [historyTailSeq, setHistoryTailSeq] = useState(latestNodeSeq)
   const [historyNodeLimit, setHistoryNodeLimit] = useState(HISTORY_PAGE_NODES)
@@ -506,6 +508,7 @@ export function TrajectoryView({
   return (
     <div className={css.root} data-conversation-composer-overlay="">
       <TrajectoryToolbar
+        codexBound={codexBound}
         actualDuration={actualDuration}
         onActualDurationChange={(nextActualDuration) => {
           setActualDuration(nextActualDuration)

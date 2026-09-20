@@ -244,6 +244,7 @@
     { "path": "./packages/interaction/tool-ask-user" },
     { "path": "./packages/context/agent-instructions" },
     { "path": "./packages/core/agent-loop" },
+    { "path": "./packages/core/agent-codex" },
     { "path": "./packages/llm/llm-retry" },
     { "path": "./packages/subprocess/subprocess" },
     { "path": "./packages/subprocess/subprocess-local" },

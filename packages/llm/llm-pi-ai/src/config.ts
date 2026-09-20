@@ -314,7 +314,8 @@ const modelProfile: z<PiAiModelProfile> = z.object({
 /** A {@link modelProfile} whose id lives in the `modelOverrides` dict key. */
 const modelOverride: z<PiAiModelOverride> = z.object(modelFields)
 
-const profile = z.object({
+/** Reusable runtime schema for one pi-ai-compatible provider profile. */
+export const PiAiProviderProfileSchema: z<PiAiProviderProfile> = z.object({
   apiKeyEnv: z.string().role('credential-ref'),
   displayName: z.string(),
   api: z.union(supportedProtocols()),
@@ -341,7 +342,7 @@ const profile = z.object({
 
 /** Runtime schema for {@link Config}. */
 export const Config: z<Config> = z.object({
-  providers: z.dict(profile).default({}),
+  providers: z.dict(PiAiProviderProfileSchema).default({}),
 })
 
 /**

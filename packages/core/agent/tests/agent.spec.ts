@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId, type UserMessage } from '@deepseek-ai/dsh-session'
@@ -405,6 +405,30 @@ describe('AgentRegistry factory seam', () => {
     await expect(ctx.agents.create({ sessionId: SessionId('before-s') })).resolves.toBeDefined()
     await owner.dispose()
     await expect(ctx.agents.create({ sessionId: SessionId('after-s') })).rejects.toThrow(/no agent factory/)
+  })
+
+  it('selects an alternative driver only when its selector accepts the Session', async () => {
+    const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    const id = SessionId('driver-choice')
+    const session = Session.create(id)
+    const selected = { agent: stubAgent('selected'), start: vi.fn(), dispose: vi.fn() }
+    const selector = vi.fn((_ctx, _id, options: { provider?: string }) =>
+      options.provider === 'preferred' ? selected : undefined)
+    const owner = await ctx.plugin(Object.assign((inner: Context) => {
+      inner.agents.setDriverSelector({ selectDriver: selector })
+      expect(() => inner.agents.setDriverSelector({ selectDriver: selector })).toThrow(/already registered/)
+    }, { inject: ['agents'] }))
+
+    expect(ctx.agents.createDriver(ctx, id, { provider: 'ordinary' }, session)).toBeUndefined()
+    expect(ctx.agents.createDriver(ctx, id, { provider: 'preferred' }, session)).toBe(selected)
+    const explicit = { agent: stubAgent('explicit'), start: vi.fn(), dispose: vi.fn() }
+    ctx.agents.setDriverFactory('preferred', { createDriver: () => explicit })
+    expect(ctx.agents.createDriver(ctx, id, { provider: 'preferred' }, session)).toBe(explicit)
+    expect(selector).toHaveBeenCalledTimes(2)
+
+    await owner.dispose()
+    expect(ctx.agents.createDriver(ctx, id, { provider: 'ordinary' }, session)).toBeUndefined()
   })
 
   it('canonicalizes an already traced Service before tracing it for the caller', async () => {

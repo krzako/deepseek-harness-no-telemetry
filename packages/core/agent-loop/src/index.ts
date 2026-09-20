@@ -13,6 +13,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { emitAgentEvent } from '@deepseek-ai/dsh-agent'
 import type {
   Agent,
+  AgentDriver,
   AgentFactory,
   AgentHandle,
   AgentOptions,
@@ -211,9 +212,11 @@ interface StoredSession {
 
 /** Prepared-but-unpublished agent resources sharing one memoized teardown. */
 interface PreparedAgent {
-  agent: ReactLoopAgent
+  agent: Agent
   /** Aborts when the factory unloads, the caller cancels, or teardown begins — ends any setup await. */
   signal: AbortSignal
+  /** Prepare the selected driver before durability and publication commit. */
+  start(source: SessionStartSource): Promise<void>
   /** Enter registries, announce, notify session-start, and start the machine. */
   publish(source: SessionStartSource): AgentHandle
   /** Reverse teardown: stop the machine, unregister, unwind the scope. Memoized. */
@@ -564,7 +567,8 @@ export class AgentLoop extends Service implements AgentFactory {
     callerSignal?.addEventListener('abort', onCallerAbort, { once: true })
     this.ownership.signal.addEventListener('abort', onFactoryTeardown, { once: true })
 
-    let machine: ReactLoopAgent | undefined
+    let machine: Agent | undefined
+    let driver: AgentDriver | undefined
     let detachSession: (() => void) | undefined
     let detachAgent: (() => void) | undefined
     let disposing: Promise<void> | undefined
@@ -585,11 +589,7 @@ export class AgentLoop extends Service implements AgentFactory {
         // sent after this point is the sender's bug — the registries are about
         // to drop the agent, so nothing should still hold it.
         if (machine === undefined) await machineReady.promise
-        if (machine !== undefined) {
-          machine.cancel({ kind: 'disposed' })
-          await machine.whenIdle()
-          await machine.scope.dispose()
-        }
+        if (driver !== undefined) await driver.dispose()
       } catch (error: unknown) {
         failures.push(error)
       }
@@ -642,13 +642,30 @@ export class AgentLoop extends Service implements AgentFactory {
       throw abort.signal.reason instanceof Error ? abort.signal.reason : new Error(String(abort.signal.reason))
     }
     try {
-      const agent = machine = new ReactLoopAgent(loopCtx, id, options, session)
+      const selected = loopCtx.agents.createDriver(loopCtx, id, options, session)
+      const defaultMachine = selected === undefined ? new ReactLoopAgent(loopCtx, id, options, session) : undefined
+      driver = selected ?? {
+        agent: defaultMachine as ReactLoopAgent,
+        start: async () => {},
+        dispose: async () => {
+          const agent = defaultMachine as ReactLoopAgent
+          agent.cancel({ kind: 'disposed' })
+          await agent.whenIdle()
+          await agent.scope.dispose()
+        },
+      }
+      const agent = machine = driver.agent
       machineReady.resolve()
       assertLive()
 
       return {
         agent,
         signal: abort.signal,
+        start: async (source) => {
+          assertLive()
+          await driver?.start(source, abort.signal)
+          assertLive()
+        },
         publish: (source) => {
           assertLive()
           detachSession = agent.ctx.sessions.enter(session)
@@ -697,6 +714,8 @@ export class AgentLoop extends Service implements AgentFactory {
       throw error
     }
     try {
+      await this.appendUnstoredSuffix(stored, preparation.session)
+      await prepared.start('startup')
       await this.appendUnstoredSuffix(stored, preparation.session)
       return prepared.publish('startup').agent
     } catch (error: unknown) {
@@ -812,6 +831,7 @@ export class AgentLoop extends Service implements AgentFactory {
     try {
       const setupCommit = await raceAbort(setup?.(prepared.agent.ctx), prepared.signal, id)
       setupCommit?.commit()
+      await raceAbort(prepared.start(source), prepared.signal, id)
       await this.appendUnstoredSuffix(stored, session)
       return prepared.publish(source)
     } catch (error: unknown) {

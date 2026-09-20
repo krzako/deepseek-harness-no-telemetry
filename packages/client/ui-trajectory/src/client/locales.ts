@@ -7,6 +7,8 @@ export const NS = 'trajectory'
 export const zh = {
   'view.trajectory': '轨迹',
   'toolbar.aria': '轨迹工具栏',
+  'toolbar.codex': 'Codex',
+  'toolbar.codexDescription': '此会话已绑定 Codex 线程',
   'toolbar.duration': '时长',
   'toolbar.useActualDuration': '使用实际时长',
   'toolbar.useEqualWidth': '使用等宽操作',
@@ -200,6 +202,8 @@ export type TrajectoryTranslate =
 export const en: Record<TrajectoryKey, string> = {
   'view.trajectory': 'Trajectory',
   'toolbar.aria': 'Trajectory toolbar',
+  'toolbar.codex': 'Codex',
+  'toolbar.codexDescription': 'This session is bound to a Codex thread',
   'toolbar.duration': 'Duration',
   'toolbar.useActualDuration': 'Use actual duration',
   'toolbar.useEqualWidth': 'Use equal-width operations',

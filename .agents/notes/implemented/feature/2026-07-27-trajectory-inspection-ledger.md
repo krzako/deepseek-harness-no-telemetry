@@ -13,6 +13,7 @@ Trajectory has to make prose, machine payloads, token usage, timing, and nested 
 **Render a compact, turn-aware event ledger with a local record inspector, using the existing DeepSeek design system.**
 
 - The ledger keeps materialized business records in Session Event order within the loaded window. Turn boundaries use a slightly heavier rule, the raw Turn id, and a continuous left rail; Request boundaries appear as small points integrated into that structure and use one chronological numbering space across ordinary and compaction requests.
+- A `Codex` badge in the ledger toolbar reads the host-computed `codexThreadBinding` client projection, which exposes only binding presence. It identifies the session's durable driver independently of the current settings switch and of the paged Event window.
 - Event kind and content form the two stable columns. Role tags align toward the content, nested subtools receive a small indentation, and CSS truncation preserves the available preview width. Token usage and duration stay in the inspector.
 - Product prose uses the existing sans stack. Turn ids, token counts, durations, tool calls, raw payloads, and other machine data use the existing code stack.
 - Existing theme tokens own both light and dark rendering. Neutral borders and surfaces form the structure; distinct low-emphasis role hues support scanning without carrying success or failure meaning, while business blue identifies selection, links, and focus.
@@ -30,6 +31,8 @@ Trajectory has to make prose, machine payloads, token usage, timing, and nested 
 - This local inspector remains independent from the conversation-wide Chat details column. At narrow widths it overlays the ledger and remains dismissible by keyboard or pointer.
 
 ## Alternatives considered
+
+**Infer the driver from the active settings switch or loaded events.** Rejected: settings can change after a session starts, and tail-first paging can omit the original thread-binding event. The host projection retains the authoritative session fact without sending native thread identity to the browser.
 
 **Copy Vite DevTools fonts, colors, glass surfaces, or component shapes.** Rejected: those choices express a different product identity. The implementation only adopts the transferable method: neutral structure, semantic accents, machine-data typography, dense scanning, and shadows reserved for floating layers.
 

@@ -12,11 +12,13 @@ Status: implemented
 
 ## 决定
 
-`AgentDefaultModelConfig` 提供 `ctx.agentDefaultModel`，并把 `{provider, model, reasoningEffort?}` 注册为 `agent-default-model` Settings 分节。其 `{provider, model}` 组合条目是 base 层，`settings.yaml` 提供用户层。该服务不偏向特定入口，因此直接创建与 Session Controller Remote 创建共享同一个默认值（[headless 直接 core 入口](../architecture/2026-08-09-headless-direct-core-entry-point.zh.md)）。
+`AgentDefaultModelConfig` 提供 `ctx.agentDefaultModel`，并把 `{agent?: 'standard' | 'codex', provider, model, reasoningEffort?}` 注册为 `agent-default-model` Settings 分节。其 `{agent?: 'standard' | 'codex', provider, model}` 组合条目是 base 层，`settings.yaml` 提供用户层。缺少 `agent` 时视为 `standard`。Codex 默认值分别保存上游 provider 和原始模型，读取时解析为精确的 `codex:<provider>` 路由，因此同名的标准和 Codex provider 不会混淆。该服务不偏向特定入口，因此直接创建与 Session Controller Remote 创建共享同一个默认值（[headless 直接 core 入口](../architecture/2026-08-09-headless-direct-core-entry-point.zh.md)）。
 
 `reasoningEffort` 属于 Settings 分节，但不属于插件配置。Settings 层按字段合并，因此已配置的强度会在用户选择省略它时继续存在。`saveSelection()` 写入完整的用户分节；因此，缺少该字段会清除已存强度。部署级强度默认值属于适配器 profile，并由它按模型解析。
 
 `session.selectModel` 把被接受的 `ModelSelection` 应用于所在会话，并调用 `saveDefaultModelSelection()` 保存共享的 Agent 默认值。存储失败只记日志，不撤销会话选择。没有 Settings 提供方的部署保留组合条目，被接受的选择只停留在该会话中。
+
+显式选择 Codex 时，空白标准 Session 会在首轮提示前重新绑定到 Codex driver。已有已提交标准轮次或已绑定 Codex thread 的 Session 不能在选择不同路由时切换 driver；此时需要新建 Session。
 
 `ApiProxyDefaults` 携带 `defaultModelSelection()` 与 `saveDefaultModelSelection()` 闭包，因此 `createApiProxy` 不依赖 Settings seam。`ApiProxyService` 将它们分别接到 `ctx.agentDefaultModel.currentSelection()` 与 `ctx.agentDefaultModel.saveSelection()`。
 

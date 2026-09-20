@@ -6,7 +6,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError, stubSettingsScope, type StubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { CardForm, numberField, textField } from '../src/client/card-form.ts'
+import { CardForm, booleanField, numberField, textField } from '../src/client/card-form.ts'
+import { CodexCardController, type CodexSettings } from '../src/client/codex-card-controller.ts'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-card-controller.ts'
 import { BashCardController, type BashSettings } from '../src/client/bash-card-controller.ts'
 import { SearxngCardController, type SearxngSettings } from '../src/client/searxng-card-controller.ts'
@@ -317,6 +318,41 @@ describe('CardForm', () => {
 
     expect(subject.shell()).toMatchObject({ available: false, writable: false })
   })
+})
+
+describe('Codex card', () => {
+  it('stages, saves, and resets the full-driver switch', async () => {
+    const host = stubSettingsScope<CodexSettings>()
+    acceptWrites(host)
+    host.publish({
+      status: 'ready', writable: true,
+      value: { enabled: false, label: 'Codex' },
+      base: { enabled: false, label: 'Codex' }, user: {},
+    })
+    const card = new CodexCardController(host.scope)
+    const face = card.inject()
+
+    expect(face.hooks.codexCard.getSnapshot().enabled.text).toBe('false')
+    expect(face.hooks.codexCard.getSnapshot().label.text).toBe('Codex')
+    face.edit('enabled', 'true')
+    expect(face.hooks.codexCard.getSnapshot()).toMatchObject({ dirty: true, enabled: { text: 'true', overridden: true } })
+    expect(host.set).not.toHaveBeenCalled()
+    face.save()
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('enabled', true) })
+    await vi.waitFor(() => { expect(face.hooks.codexCard.getSnapshot().dirty).toBe(false) })
+
+    face.resetField('enabled')
+    face.save()
+    await vi.waitFor(() => { expect(host.unset).toHaveBeenCalledWith('enabled') })
+    expect(face.hooks.codexCard.getSnapshot().enabled.text).toBe('false')
+  })
+
+  it('accepts only boolean switch drafts', () => {
+    expect(booleanField('enabled').parse('true')).toEqual({ kind: 'set', value: true })
+    expect(booleanField('enabled').parse('false')).toEqual({ kind: 'set', value: false })
+    expect(booleanField('enabled').parse('maybe')).toBeUndefined()
+  })
+
 })
 
 describe('BashCardController', () => {

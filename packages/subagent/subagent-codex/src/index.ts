@@ -34,6 +34,8 @@ const DEFAULT_PROVIDER_NAME = 'codex'
 
 /** Deployment-owned model, permission, environment, and process-release settings. */
 export interface Config {
+  /** Absolute path to the Codex binary built from the deployment fork. */
+  binaryPath?: string
   /** Provider name on `ctx.subagents` (default `codex`). */
   providerName?: string
   /** Native Codex model fixed for this instance; omitted to inherit Codex settings. */
@@ -50,6 +52,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
+  binaryPath: z.string().default(process.env.DSH_CODEX_BIN ?? '/opt/codex/bin/codex'),
   providerName: z.string().min(1).default(DEFAULT_PROVIDER_NAME),
   model: z.string().min(1),
   env: z.dict(z.string()).default({}),
@@ -93,6 +96,7 @@ class CodexProvider implements SubagentProvider {
       throw codexStartupFailure(error)
     }
     const spec: CodexRunSpec = {
+      binaryPath: this.config.binaryPath,
       cwd,
       ...this.config.model === undefined ? {} : { model: this.config.model },
       permissionMode: this.config.permissionMode,
@@ -116,11 +120,15 @@ class CodexProvider implements SubagentProvider {
  */
 export function apply(ctx: Context, config: Config): void {
   const resolved: ResolvedConfig = {
+    binaryPath: config.binaryPath ?? process.env.DSH_CODEX_BIN ?? '/opt/codex/bin/codex',
     providerName: config.providerName ?? DEFAULT_PROVIDER_NAME,
     ...config.model === undefined ? {} : { model: config.model },
     env: config.env as Record<string, string>,
     permissionMode: config.permissionMode ?? DEFAULT_CODEX_PERMISSION_MODE,
     disposeGraceMs: config.disposeGraceMs as number,
+  }
+  if (!resolved.binaryPath.startsWith('/')) {
+    throw new Error('subagent-codex: binaryPath must be absolute')
   }
   assertPositiveFinite(
     'subagent-codex',

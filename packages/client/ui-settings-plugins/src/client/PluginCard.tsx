@@ -27,6 +27,8 @@ export interface PluginCardProps {
   t: (key: PluginsSettingsLocaleKey) => string
   /** Locale key of the plugin's name. */
   titleKey: PluginsSettingsLocaleKey
+  /** Optional user-defined title for the owning settings section. */
+  title?: string
   /** Locale key of the line describing what this plugin's settings govern. */
   descriptionKey: PluginsSettingsLocaleKey
   /** The card's form state: availability, writability, and what a save would do. */
@@ -60,7 +62,7 @@ export function PluginCard(props: PluginCardProps) {
     if (!state.dirty && !state.failed) setOpen(false)
   }, [state.dirty, state.failed, state.saving])
   if (!state.available) return null
-  const title = props.t(props.titleKey)
+  const title = props.title ?? props.t(props.titleKey)
   const blocked = !state.dirty || state.invalid || state.saving
   return (
     <li className={clsx(css.card, open && css.cardOpen)}>

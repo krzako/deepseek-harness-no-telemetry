@@ -9,6 +9,8 @@ import type { AgentLoopCardProps } from '../src/client/AgentLoopCard.tsx'
 import { BashCard } from '../src/client/BashCard.tsx'
 import type { BashCardProps } from '../src/client/BashCard.tsx'
 import { ConfigurablePluginsTab } from '../src/client/ConfigurablePluginsTab.tsx'
+import { CodexCard } from '../src/client/CodexCard.tsx'
+import type { CodexCardProps } from '../src/client/CodexCard.tsx'
 import type { ConfigurablePluginsTabProps } from '../src/client/ConfigurablePluginsTab.tsx'
 import { PluginsSettingsSection } from '../src/client/PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionProps, PluginsSettingsTabEntry } from '../src/client/PluginsSettingsSection.tsx'
@@ -21,6 +23,7 @@ import type { SubagentModelSelectionCardProps } from '../src/client/SubagentMode
 import type { AgentLoopCardState } from '../src/client/agent-loop-card-controller.ts'
 import type { BashCardState } from '../src/client/bash-card-controller.ts'
 import type { CardFieldState, CardShell } from '../src/client/card-form.ts'
+import type { CodexCardState } from '../src/client/codex-card-controller.ts'
 import type { ConfigurablePluginsTabState } from '../src/client/tab-store.ts'
 import type { SubagentModelSelectionCardState } from '../src/client/subagent-model-selection-card-controller.ts'
 import type { SearxngCardState } from '../src/client/searxng-card-controller.ts'
@@ -592,6 +595,31 @@ describe('SubagentModelSelectionCard', () => {
     expect(control.disabled).toBe(true)
     fireEvent.click(control)
     expect(actions.toggleEnabled).not.toHaveBeenCalled()
+  })
+})
+
+describe('CodexCard', () => {
+  it('stages the switch and shows that disabling restores the standard loop', () => {
+    const store = createSnapshotStore<CodexCardState>({
+      ...settled, enabled: field('false'), label: field('Codex'),
+    })
+    const actions = cardActions()
+    const props = { ...actions, t, useCodexCard: bindSnapshotSelector(store) } as unknown as CodexCardProps
+    render(<CodexCard {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: `${en.expand}: ${en.codexTitle}` }))
+    const toggle = screen.getByRole('switch', { name: en.codexEnabled })
+    expect(toggle).toHaveProperty('checked', false)
+    expect(screen.getByText(en.codexEnabledHint)).toBeTruthy()
+    fireEvent.click(toggle)
+    expect(actions.edit).toHaveBeenCalledWith('enabled', 'true')
+
+    act(() => { store.set({
+      ...settled, dirty: true, enabled: field('true', { overridden: true }), label: field('Codex'),
+    }) })
+    expect(toggle).toHaveProperty('checked', true)
+    fireEvent.click(screen.getByRole('button', { name: en.reset }))
+    expect(actions.resetField).toHaveBeenCalledWith('enabled')
   })
 })
 

@@ -1,0 +1,4 @@
+# Optional Profile Bundle: install the full Codex Agent driver on the Host plane.
+- insert:
+    - id: agent-codex
+      name: '@deepseek-ai/dsh-agent-codex'

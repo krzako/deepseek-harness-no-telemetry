@@ -125,13 +125,22 @@ export class SessionCommandController {
     const agent = await this.resolveAgent(request.sessionId)
     return this.agents.serializeImageAdmission(agent, async () => {
       try {
-        const resolved = await this.ctx.llm.resolveCallConfig({
-          provider: request.provider,
-          model: request.model,
-          ...(request.reasoningEffort === undefined
-            ? {}
-            : { reasoningEffort: ReasoningEffortId(request.reasoningEffort) }),
-        })
+        const driverModel = this.ctx.agents.resolveDriverModel(request.provider, request.model)
+        const resolved = driverModel === undefined
+          ? await this.ctx.llm.resolveCallConfig({
+            provider: request.provider,
+            model: request.model,
+            ...(request.reasoningEffort === undefined
+              ? {}
+              : { reasoningEffort: ReasoningEffortId(request.reasoningEffort) }),
+          })
+          : {
+            provider: request.provider,
+            model: request.model,
+            ...(request.reasoningEffort === undefined
+              ? {}
+              : { reasoningEffort: ReasoningEffortId(request.reasoningEffort) }),
+          }
         const selected: AgentModelSelection = {
           provider: resolved.provider,
           model: resolved.model,
@@ -139,7 +148,8 @@ export class SessionCommandController {
             ? {}
             : { reasoningEffort: resolved.reasoningEffort }),
         }
-        this.agents.selectForNextRequest(agent, selected)
+        const selectedAgent = await this.agents.agentForSelection(agent, selected)
+        this.agents.selectForNextRequest(selectedAgent, selected)
         try {
           await this.ctx.agentDefaultModel.saveSelection(selected)
         } catch (error) {
@@ -301,7 +311,7 @@ export class SessionCommandController {
         { value: request.clientTimeZone },
       )
     }
-    const agent = await this.resolveAgent(request.sessionId)
+    let agent = await this.resolveAgent(request.sessionId)
     if (hasPromptRequest(agent, request.requestId)) return { accepted: true }
     const selection = this.agents.selectionFor(agent).current
     if (!routeServed(this.ctx, selection.provider)) {
@@ -310,6 +320,14 @@ export class SessionCommandController {
         `no adapter serves provider "${selection.provider}"; select a model for this session`,
         { provider: selection.provider, model: selection.model },
       )
+    }
+    try {
+      agent = await this.agents.agentForSelection(agent, selection)
+      this.agents.applySelectionForNextTurn(agent, selection)
+    } catch (error) {
+      throw new RemoteError('session/model-unavailable', String(error), {
+        provider: selection.provider, model: selection.model,
+      })
     }
     const source: MessageSource = {
       kind: 'user',
@@ -321,7 +339,8 @@ export class SessionCommandController {
       try {
         if (hasImage) {
           const current = this.agents.selectionFor(agent).current
-          const model = await this.ctx.llm.resolveModelInfo(current.provider, current.model)
+          const model = this.ctx.agents.resolveDriverModel(current.provider, current.model)
+            ?? await this.ctx.llm.resolveModelInfo(current.provider, current.model)
           if (model.inputModalities !== undefined && !model.inputModalities.includes('image')) {
             throw new RemoteError(
               'session/attachment-invalid',
@@ -614,5 +633,6 @@ function referencedImage(
 }
 
 function routeServed(ctx: Context, provider: string): boolean {
-  return ctx.llm.listProviders().some(entry => entry.id === provider)
+  return ctx.agents.hasDriverFactory(provider)
+    || ctx.llm.listProviders().some(entry => entry.id === provider)
 }
