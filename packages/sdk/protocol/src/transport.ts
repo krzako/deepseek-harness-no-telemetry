@@ -1,7 +1,8 @@
 /**
  * Newline-delimited JSON-RPC 2.0 over byte streams. Frames with `id` and
  * `method` are requests, `id` alone is a response, and `method` alone is a
- * notification. Malformed lines are ignored; handler failures become error frames.
+ * notification. Malformed lines are ignored unless fail-closed framing is
+ * requested; handler failures become error frames.
  *
  * @module @deepseek-ai/dsh-sdk-protocol/transport
  */
@@ -13,6 +14,12 @@ import { StringDecoder } from 'node:string_decoder'
 type JsonRpcId = string | number
 type RequestHandler = (method: string, params: Record<string, unknown>) => Promise<unknown>
 type NotificationHandler = (method: string, params: Record<string, unknown>) => void
+
+/** Optional framing policy for callers that require fail-closed protocol input. */
+export interface JsonRpcLineTransportOptions {
+  /** Reject the transport when a non-empty line is not valid JSON. */
+  readonly rejectMalformedJson?: boolean
+}
 
 /** A JSON-RPC error response, preserving the wire `code` and optional `data`. */
 export class JsonRpcResponseError extends Error {
@@ -70,6 +77,7 @@ export class JsonRpcLineTransport implements JsonRpcTransportPeer {
   constructor(
     private readonly input: Readable,
     private readonly output: Writable,
+    private readonly options: JsonRpcLineTransportOptions = {},
   ) {}
 
   /** Attach the input listeners and begin reading frames. Idempotent. */
@@ -203,7 +211,9 @@ export class JsonRpcLineTransport implements JsonRpcTransportPeer {
     try {
       message = JSON.parse(line)
     } catch {
-      // Only JSON syntax errors reach this catch; malformed peer lines are ignored.
+      if (this.options.rejectMalformedJson === true) {
+        this.closeWithError(new Error('JSON-RPC peer sent malformed JSON'))
+      }
       return
     }
     if (!message || typeof message !== 'object') return
@@ -221,6 +231,13 @@ export class JsonRpcLineTransport implements JsonRpcTransportPeer {
     if (typeof method === 'string') {
       this.notificationHandler?.(method, objectParams(frame.params))
     }
+  }
+
+  private closeWithError(error: Error): void {
+    this.input.off('data', this.onData)
+    this.input.off('error', this.onInputError)
+    this.input.off('end', this.onInputEnd)
+    this.failPending(error)
   }
 
   private async handleIncomingRequest(id: JsonRpcId, method: string, params: Record<string, unknown>): Promise<void> {

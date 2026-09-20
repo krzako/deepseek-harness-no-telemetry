@@ -140,7 +140,7 @@ export const PROFILE_TEMPLATES: Record<string, ProfileTemplate> = {
     patchReload: 'startup',
   },
   web: {
-    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-agent-codex'],
     patchReload: 'live',
   },
   headless: {
@@ -159,6 +159,7 @@ export const PROFILE_TEMPLATES: Record<string, ProfileTemplate> = {
 
 /** Installation-owned bundle tuples normalized to the shipped template. */
 const INSTALLATION_OWNED_PROFILE_TUPLES: Record<string, readonly string[]> = {
+  web: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
   headless: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless'],
 }
 

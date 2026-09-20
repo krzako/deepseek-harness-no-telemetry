@@ -1,6 +1,5 @@
 import { execFile } from 'node:child_process'
 import {
-  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -8,10 +7,8 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -33,15 +30,7 @@ import {
 } from './responses-fixture.ts'
 
 const execFileAsync = promisify(execFile)
-const packageRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
-const codexBinDir = join(packageRoot, 'node_modules', '.bin')
-const codexPackageJson = createRequire(import.meta.url).resolve('@openai/codex/package.json')
-const codexPackage = JSON.parse(readFileSync(
-  codexPackageJson,
-  'utf8',
-)) as { version: string; bin: { codex: string } }
-const codexEntry = resolve(dirname(codexPackageJson), codexPackage.bin.codex)
-const codexPackageRoot = dirname(dirname(codexEntry))
+const codexEntry = process.env.DSH_CODEX_TEST_BIN
 
 const roots: string[] = []
 const fixtures: ResponsesFixture[] = []
@@ -107,7 +96,7 @@ async function realInstanceFixture(
     CODEX_HOME: codexHome,
     HOME: root,
     XDG_CONFIG_HOME: join(root, 'xdg'),
-    PATH: `${codexBinDir}${delimiter}${process.env.PATH ?? ''}`,
+    PATH: process.env.PATH ?? '',
     HTTP_PROXY: '',
     HTTPS_PROXY: '',
     ALL_PROXY: '',
@@ -150,6 +139,7 @@ async function realHarness(
   const instance = await realInstanceFixture(script)
   const { ctx, handles, spawnSpecs } = await realRuntime()
   await ctx.plugin(codex, {
+    binaryPath: codexEntry ?? '/missing-dsh-codex-test-binary',
     env: instance.env,
     ...permissionMode === undefined ? {} : { permissionMode },
     disposeGraceMs: 2_000,
@@ -214,22 +204,20 @@ function responseInputTexts(body: Record<string, unknown>): string[] {
   })
 }
 
-describe('real @openai/codex 0.149.1 product', () => {
+describe.skipIf(codexEntry === undefined)('real DSH Codex fork product', () => {
   it('starts approve-for-me through the real app-server and returns exact text', async () => {
     const sentinel = 'REAL_CODEX_SENTINEL_0_149_1'
     const task = 'Return the fixture sentinel exactly.'
     const { harness, fixture } = await realHarness([
       { kind: 'complete', text: sentinel },
     ], 'approve-for-me')
-    expect(codexPackage.version).toBe('0.149.1')
-    const version = await execFileAsync(process.execPath, [codexEntry, '--version'], {
+    const version = await execFileAsync(codexEntry!, ['--version'], {
       env: { ...process.env, ...harness.env },
     })
-    expect(version.stdout.trim()).toBe('codex-cli 0.149.1')
+    expect(version.stdout.trim()).toMatch(/^codex-cli \S+$/)
     const schemaRoot = mkdtempSync(join(tmpdir(), 'dsh-codex-schema-'))
     roots.push(schemaRoot)
-    await execFileAsync(process.execPath, [
-      codexEntry,
+    await execFileAsync(codexEntry!, [
       'app-server',
       'generate-json-schema',
       '--out',
@@ -260,7 +248,6 @@ describe('real @openai/codex 0.149.1 product', () => {
     await run.dispose()
 
     expect(harness.spawnSpecs[0]?.argv).toEqual([
-      process.execPath,
       codexEntry,
       'app-server',
       '--stdio',
@@ -276,24 +263,6 @@ describe('real @openai/codex 0.149.1 product', () => {
     await expectQuiescent(harness.handles)
   }, 60_000)
 
-  it('fails a missing platform payload without falling back to a host codex', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-codex-missing-payload-'))
-    roots.push(root)
-    const isolatedPackage = join(root, 'node_modules', '@openai', 'codex')
-    mkdirSync(dirname(isolatedPackage), { recursive: true })
-    cpSync(codexPackageRoot, isolatedPackage, { recursive: true, dereference: true })
-    const isolatedEntry = join(isolatedPackage, 'bin', 'codex.js')
-
-    await expect(execFileAsync(process.execPath, [isolatedEntry, '--version'], {
-      env: {
-        PATH: codexBinDir,
-        ...process.platform === 'win32' && process.env.SystemRoot !== undefined
-          ? { SystemRoot: process.env.SystemRoot }
-          : {},
-      },
-    })).rejects.toThrow(/Missing optional dependency @openai\/codex-[a-z0-9-]+/)
-  }, 30_000)
-
   it('runs two named instances concurrently and unloads one without revoking its run', async () => {
     const safeInstance = await realInstanceFixture([{ kind: 'hold' }])
     const bypassInstance = await realInstanceFixture([{
@@ -302,6 +271,7 @@ describe('real @openai/codex 0.149.1 product', () => {
     }])
     const { ctx, handles, spawnSpecs } = await realRuntime()
     const safeFiber = await ctx.plugin(codex, {
+      binaryPath: codexEntry!,
       providerName: 'codex-safe',
       model: 'codex-safe-model',
       env: safeInstance.env,
@@ -309,6 +279,7 @@ describe('real @openai/codex 0.149.1 product', () => {
       disposeGraceMs: 2_000,
     })
     const bypassFiber = await ctx.plugin(codex, {
+      binaryPath: codexEntry!,
       providerName: 'codex-bypass',
       model: 'codex-bypass-model',
       env: bypassInstance.env,

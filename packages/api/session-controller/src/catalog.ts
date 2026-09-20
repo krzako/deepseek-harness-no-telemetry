@@ -18,6 +18,7 @@ export async function buildModelCatalog(
   defaultSelection: ModelSelection = ctx.agentDefaultModel.currentSelection(),
 ): Promise<ModelCatalog> {
   const providers = ctx.llm.listProviders()
+  const driverCatalogs = ctx.agents.listDriverCatalogs()
   const catalog = await Promise.all(providers.map(async (provider) => {
     try {
       const models = await ctx.llm.listModels(provider.id)
@@ -59,9 +60,21 @@ export async function buildModelCatalog(
   }))
   return {
     default: { ...defaultSelection },
-    routableProviders: providers.map(provider => provider.id),
-    groups: catalog.flatMap(item => item.kind === 'group' ? [item.group] : [])
-      .filter(group => group.models.length > 0),
+    routableProviders: [...providers.map(provider => provider.id), ...driverCatalogs.map(provider => provider.id)],
+    groups: [
+      ...catalog.flatMap(item => item.kind === 'group' ? [item.group] : [])
+        .filter(group => group.models.length > 0),
+      ...driverCatalogs.filter(group => group.models.length > 0).map(group => ({
+        id: group.id,
+        name: group.name,
+        models: group.models.map(model => ({
+          id: model.id,
+          name: model.name,
+          ...(model.description === undefined ? {} : { description: model.description }),
+          ...(model.reasoning === undefined ? {} : { reasoning: model.reasoning }),
+        })),
+      })),
+    ],
     failures: catalog.flatMap(item => item.kind === 'failure' ? [item.failure] : []),
   }
 }

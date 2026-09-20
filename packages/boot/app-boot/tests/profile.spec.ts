@@ -199,6 +199,7 @@ describe('loadProfile', () => {
     // cannot be asserted to fail here: the source-plane test runner resolves
     // @deepseek-ai/* through tsconfig paths regardless of the staged anchor.
     expect(PROFILE_TEMPLATES.web?.bundles).toContain('@deepseek-ai/dsh-base')
+    expect(PROFILE_TEMPLATES.web?.bundles).toContain('@deepseek-ai/dsh-agent-codex')
     expect(PROFILE_TEMPLATES.web?.patchReload).toBe('live')
     expect(PROFILE_TEMPLATES.headless?.patchReload).toBe('startup')
     expect(PROFILE_TEMPLATES.acp).toEqual({
@@ -222,6 +223,28 @@ describe('loadProfile', () => {
       .toEqual([...PROFILE_TEMPLATES.web?.bundles ?? []])
     expect(readProfileManifest('t', resolveProfileDir('web', home)).dsh?.profile?.patchReload)
       .toBe('live')
+  })
+
+  it('migrates only the former stock web tuple to the Codex-enabled template', () => {
+    const anchor = stageInstallation({
+      '@deepseek-ai/dsh-base': { patch: '[]\n' },
+      '@deepseek-ai/dsh-web-app': { patch: '[]\n' },
+      '@deepseek-ai/dsh-agent-codex': { patch: '[]\n' },
+      'custom-bundle': { patch: '[]\n' },
+    })
+    const stockHome = tmp()
+    const stock = resolveProfileDir('web', stockHome)
+    initProfile(stock, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+    loadProfile('t', 'web', anchor, stockHome)
+    expect(readProfileManifest('t', stock).dsh?.profile?.bundles)
+      .toEqual(PROFILE_TEMPLATES.web?.bundles)
+
+    const customHome = tmp()
+    const custom = resolveProfileDir('web', customHome)
+    initProfile(custom, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'custom-bundle'])
+    loadProfile('t', 'web', anchor, customHome)
+    expect(readProfileManifest('t', custom).dsh?.profile?.bundles)
+      .toEqual(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'custom-bundle'])
   })
 
   it('normalizes only the exact installation-owned headless bundle tuple', () => {

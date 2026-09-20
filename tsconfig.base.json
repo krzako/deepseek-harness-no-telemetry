@@ -237,6 +237,8 @@
       "@deepseek-ai/dsh-agent-default-model": ["./packages/core/agent-default-model/src"],
       "@deepseek-ai/dsh-agent-instructions": ["./packages/context/agent-instructions/src"],
       "@deepseek-ai/dsh-agent-loop": ["./packages/core/agent-loop/src"],
+      "@deepseek-ai/dsh-agent-codex": ["./packages/core/agent-codex/src"],
+      "@deepseek-ai/dsh-agent-codex/types": ["./packages/core/agent-codex/src/types.ts"],
       "@deepseek-ai/dsh-agent-loop-testkit": ["./packages/test-support/agent-loop-testkit/src"],
       "@deepseek-ai/dsh-agent-presets": ["./packages/preset/agent-presets/src"],
       "@deepseek-ai/dsh-agent-presets/invariant": ["./packages/preset/agent-presets/src/invariant.ts"],
