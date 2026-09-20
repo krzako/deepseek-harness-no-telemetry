@@ -21,6 +21,7 @@ export default defineConfig(({ env }) => {
         'vendor/*', 'packages/*/*', 'apps/cli'
       ],
       exclude: [
+        'packages/extensions/export-conversation-pdf',
         'packages/llm/deepseek-llm-api-extensions',
         'packages/llm/llm-deepseek',
         'packages/llm/plugin-package-inventory-deepseek',

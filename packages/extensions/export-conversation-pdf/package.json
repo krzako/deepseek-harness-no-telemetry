@@ -1,0 +1,41 @@
+{
+  "name": "@deepseek-ai/dsh-export-conversation-pdf",
+  "description": "Web plugin that exports conversations to PDF with system Chromium",
+  "version": "0.1.3-alpha.1",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "immediately": true
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "workspace:^",
+    "puppeteer-core": "25.8.0"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "render.mjs",
+    "host-logic.mjs",
+    "fonts/**",
+    "README.md"
+  ],
+  "scripts": {
+    "check": "node --check index.js && node --check client.js && node --check render.mjs && node --check host-logic.mjs"
+  },
+  "license": "MIT"
+}

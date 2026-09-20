@@ -58,6 +58,10 @@
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'
 
+    # Render the current conversation as a PDF through system Chromium.
+    - id: export-conversation-pdf
+      name: '@deepseek-ai/dsh-export-conversation-pdf'
+
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 
