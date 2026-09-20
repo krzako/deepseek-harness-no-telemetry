@@ -108,7 +108,113 @@ export function fmtTime(t) {
   } catch { return '' }
 }
 
+/** Latest persisted conversation title, with a stable fallback for untitled logs. */
+export function conversationTitle(events) {
+  const rows = Array.isArray(events) ? events : []
+  const event = rows.findLast((item) => item && item.type === 'session/title'
+    && item.data && typeof item.data.title === 'string' && item.data.title.trim() !== '')
+  return event ? event.data.title.trim() : 'Rozmowa'
+}
+
+/** Start timestamp and user/assistant message count, excluding tool activity. */
+export function conversationStats(events) {
+  const messages = surfaceToMessages({ events: Array.isArray(events) ? events : [] }, false, false)
+    .filter((item) => item.role === 'user' || item.role === 'assistant')
+  const times = messages.map((item) => item.time).filter((time) => typeof time === 'number' && time > 0)
+  return {
+    messageCount: messages.length,
+    startedAt: times.length > 0 ? Math.min(...times) : 0,
+  }
+}
+
+/** Filesystem-safe ISO timestamp retaining the conversation start time. */
+export function sanitizedIsoDate(time) {
+  const date = new Date(Number(time))
+  if (Number.isNaN(date.getTime())) return 'unknown-date'
+  return date.toISOString().replace(/[:.]/g, '-')
+}
+
+/** Deterministic filename derived from the conversation rather than export time. */
+export function conversationPdfFilename({ startedAt, title, messageCount, includeThinking = false, includeWebSearch = false }) {
+  const variants = (includeThinking ? '+thinking' : '') + (includeWebSearch ? '+ws' : '')
+  return 'dsh_' + sanitizedIsoDate(startedAt) + '_' + slug(title) + variants + '_' + String(messageCount) + '_messages.pdf'
+}
+
+function parsedArguments(data) {
+  if (!data || typeof data !== 'object' || typeof data.arguments !== 'string') return null
+  try {
+    const value = JSON.parse(data.arguments)
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null
+  } catch { return null }
+}
+
+/** Classify native calls and PTC run_code wrappers for the exported Web activity. */
+export function webActivityKind(data) {
+  if (!data || typeof data !== 'object') return null
+  if (data.name === 'web_search') return 'search'
+  if (data.name === 'web_fetch') return 'fetch'
+  if (data.name !== 'run_code') return null
+  const args = parsedArguments(data)
+  const code = args && typeof args.code === 'string' ? args.code : ''
+  const searchAt = code.search(/\btools\.web_search\s*\(/)
+  const fetchAt = code.search(/\btools\.web_fetch\s*\(/)
+  if (searchAt < 0) return fetchAt < 0 ? null : 'fetch'
+  if (fetchAt < 0) return 'search'
+  return searchAt < fetchAt ? 'search' : 'fetch'
+}
+
+/** Backward-compatible predicate for callers interested only in searches. */
+export function isWebSearchCallData(data) {
+  return webActivityKind(data) === 'search'
+}
+
+function webSearchRequestText(data) {
+  const args = parsedArguments(data)
+  if (data.name === 'web_search') {
+    if (args !== null) return JSON.stringify(args, null, 2)
+    return typeof data.arguments === 'string' ? data.arguments : ''
+  }
+  const code = args && typeof args.code === 'string' ? args.code : ''
+  const callAt = code.search(/\btools\.web_search\s*\(/)
+  const relevant = callAt >= 0 ? code.slice(callAt) : code
+  const queries = relevant.match(/\bqueries\s*:\s*\[([\s\S]*?)\]/)
+  if (queries !== null) {
+    try {
+      const values = JSON.parse('[' + queries[1] + ']')
+      if (Array.isArray(values) && values.every((value) => typeof value === 'string')) {
+        return JSON.stringify({ queries: values }, null, 2)
+      }
+    } catch { /* show the relevant PTC source below */ }
+  }
+  return relevant
+}
+
+function webFetchUrl(data) {
+  const args = parsedArguments(data)
+  if (data.name === 'web_fetch') return typeof (args && args.url) === 'string' ? args.url : ''
+  const code = args && typeof args.code === 'string' ? args.code : ''
+  const fetchAt = code.search(/\btools\.web_fetch\s*\(/)
+  const relevant = fetchAt >= 0 ? code.slice(fetchAt) : code
+  const match = relevant.match(/\burl\s*:\s*(["'])(.*?)\1/)
+  return match === null ? '' : match[2]
+}
+
 function messageHtml(m, includeThinking) {
+  if (m.role === 'web-fetch') {
+    const time = fmtTime(m.time)
+    const text = m.url === ''
+      ? 'Pobieram zawartość strony o nieustalonym adresie.'
+      : 'Pobieram zawartość [' + m.url + '](' + m.url + ').'
+    return '<div class="msg web-search fetch"><div class="meta"><span class="who">Web fetch</span>' + (time !== '' ? '<time>' + esc(time) + '</time>' : '') + '</div><div class="body">' + renderBlocks(text) + '</div></div>'
+  }
+  if (m.role === 'web-search-call' || m.role === 'web-search-result') {
+    const result = m.role === 'web-search-result'
+    const time = fmtTime(m.time)
+    const label = result ? 'Web search · wynik' : 'Web search · zapytanie'
+    const status = result && m.isError ? '<span class="tool-error">Błąd</span>' : ''
+    const body = result ? renderBlocks(m.text) : '<pre><code>' + esc(m.text) + '</code></pre>'
+    return '<div class="msg web-search ' + (result ? 'result' : 'call') + '"><div class="meta"><span class="who">' + label + '</span>' + (time !== '' ? '<time>' + esc(time) + '</time>' : '') + status + '</div><div class="body">' + body + '</div></div>'
+  }
   const isUser = m.role === 'user'
   const who = isUser ? 'Użytkownik' : 'Asystent'
   const time = fmtTime(m.time)
@@ -142,11 +248,16 @@ const DOC_CSS = `
   .who { font-size:9pt; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; }
   .msg.user .who { color:#4f46e5; }
   .msg.assistant .who { color:#0d9488; }
+  .msg.web-search .who { color:#0369a1; }
   time { font-size:8pt; color:#9ca3af; }
   .model-tag { font-size:8pt; color:#9ca3af; font-family:'JetBrains Mono','Noto Color Emoji',monospace; }
   .body { border-left:3px solid #e5e7eb; padding:2px 0 2px 14px; }
   .msg.user .body { border-color:#c7d2fe; background:#f8f9ff; padding-top:6px; padding-bottom:6px; border-radius:0 8px 8px 0; }
   .msg.assistant .body { border-color:#99f6e4; }
+  .msg.web-search .body { border-color:#bae6fd; background:#f7fcff; padding-top:8px; padding-bottom:8px; border-radius:0 8px 8px 0; }
+  .msg.web-search.call { margin-bottom:10px; }
+  .msg.web-search.result pre { background:#fff; }
+  .tool-error { font-size:8pt; font-weight:700; color:#b91c1c; }
   p { margin:0 0 8px; white-space:pre-wrap; word-break:break-word; }
   h1,h2,h3,h4,h5,h6 { color:#111827; line-height:1.3; margin:14px 0 8px; font-weight:700; }
   .body h1 { font-size:15pt; } .body h2 { font-size:13pt; } .body h3 { font-size:11.5pt; }
@@ -165,17 +276,18 @@ const DOC_CSS = `
   .thinking p, .thinking li { font-size:9pt; color:#475569; }
 `
 
-export function buildHtml({ title, messages, includeThinking }) {
+export function buildHtml({ title, messages, includeThinking, includeWebSearch = false }) {
   const times = []
   for (const m of messages) if (typeof m.time === 'number' && m.time > 0) times.push(m.time)
   let range = ''
   if (times.length > 0) range = fmtTime(Math.min.apply(null, times)) + ' – ' + fmtTime(Math.max.apply(null, times))
   const n = messages.length
-  const word = n === 1 ? 'wiadomość' : 'wiadomości'
+  const word = n === 1 ? 'element rozmowy' : 'elementów rozmowy'
   let sub = 'Eksport rozmowy'
   if (range !== '') sub += ' · ' + range
   sub += ' · ' + n + ' ' + word
   if (includeThinking) sub += ' · z myśleniem modelu'
+  if (includeWebSearch) sub += ' · z aktywnością web'
 
   let body = ''
   for (const m of messages) {
@@ -195,7 +307,7 @@ export function randomToken() {
 }
 
 // Extract exportable messages from a cloned session surface snapshot.
-export function surfaceToMessages(surface, includeThinking) {
+export function surfaceToMessages(surface, includeThinking, includeWebSearch = false) {
   const events = Array.isArray(surface && surface.events) ? surface.events : []
   const out = []
   for (const ev of events) {
@@ -203,7 +315,31 @@ export function surfaceToMessages(surface, includeThinking) {
     const time = typeof ev.time === 'number' ? ev.time : 0
     const data = ev.data
     if (!data || typeof data !== 'object') continue
-    if (ev.type === 'user/message') {
+    const webKind = ev.type === 'tool/call' ? webActivityKind(data) : null
+    if (includeWebSearch && webKind === 'search') {
+      const text = webSearchRequestText(data)
+      out.push({ role: 'web-search-call', time, callId: String(data.callId || ''), text })
+    } else if (includeWebSearch && webKind === 'fetch') {
+      out.push({ role: 'web-fetch', time, callId: String(data.callId || ''), url: webFetchUrl(data) })
+    } else if (includeWebSearch && ev.type === 'tool/result') {
+      const message = data.message
+      const source = message && typeof message === 'object' ? message.source : null
+      const callId = source && typeof source === 'object' ? String(source.callId || '') : ''
+      const call = out.findLast((item) => item.role === 'web-search-call' && item.callId === callId)
+      if (!call) continue
+      const texts = []
+      const collectText = (blocks) => {
+        for (const block of Array.isArray(blocks) ? blocks : []) {
+          if (!block || typeof block !== 'object') continue
+          if (block.type === 'text' && typeof block.text === 'string' && block.text !== '') texts.push(block.text)
+          else if (block.type === 'tool-result') collectText(block.content)
+        }
+      }
+      collectText(message.content)
+      const resultBlock = Array.isArray(message.content) ? message.content.find((block) => block && block.type === 'tool-result') : null
+      const isError = Boolean(resultBlock && resultBlock.isError === true)
+      out.push({ role: 'web-search-result', time, callId, text: texts.join('\n\n') || '[brak tekstowego wyniku]', isError })
+    } else if (ev.type === 'user/message') {
       const src = data.source
       if (!src || src.kind !== 'user') continue // only direct human prompts
       const parts = []

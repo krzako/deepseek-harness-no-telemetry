@@ -66,12 +66,12 @@ try {
     // Spec mode: { title, includeThinking, events } — build the document here.
     const spec = JSON.parse(raw)
     const logic = await import('./host-logic.mjs')
-    const messages = logic.surfaceToMessages({ events: Array.isArray(spec.events) ? spec.events : [] }, spec.includeThinking === true)
+    const messages = logic.surfaceToMessages({ events: Array.isArray(spec.events) ? spec.events : [] }, spec.includeThinking === true, spec.includeWebSearch === true)
     if (messages.length === 0) {
-      console.error('spec contains no exportable user/assistant messages')
+      console.error('spec contains no exportable conversation entries')
       process.exit(1)
     }
-    html = logic.buildHtml({ title: typeof spec.title === 'string' && spec.title !== '' ? spec.title : 'Rozmowa', messages, includeThinking: spec.includeThinking === true })
+    html = logic.buildHtml({ title: typeof spec.title === 'string' && spec.title !== '' ? spec.title : 'Rozmowa', messages, includeThinking: spec.includeThinking === true, includeWebSearch: spec.includeWebSearch === true })
   } else {
     html = raw
   }

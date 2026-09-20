@@ -1,7 +1,7 @@
 window.__ModuleLoader__.load({ id: "@deepseek-ai/dsh-export-conversation-pdf", factory: (require) => {
 var module = { exports: {} }; var exports = module.exports;
 const React = require("react");
-const PANEL_CSS = ".xexp-hdr{display:inline-flex;align-items:center;gap:6px}.xexp-check{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--dsw-alias-label-secondary,#4b5563);cursor:pointer;user-select:none}.xexp-check input{accent-color:var(--dsw-alias-brand-primary,#4f46e5);width:13px;height:13px;margin:0;cursor:pointer}.xexp-hdr-btn{padding:2px 8px;border-radius:6px;border:1px solid var(--dsw-alias-border-l2,#cbd5e1);background:transparent;color:var(--dsw-alias-label-secondary,#4b5563);font-size:11px;font-weight:600;cursor:pointer}.xexp-hdr-btn:hover:not(:disabled){border-color:var(--dsw-alias-brand-primary,#4f46e5);color:var(--dsw-alias-brand-primary,#4f46e5)}.xexp-hdr-btn:disabled{opacity:.6;cursor:default}.xexp-hdr-link{font-size:11px;font-weight:600;color:var(--dsw-alias-state-success-primary,#15803d);text-decoration:none;white-space:nowrap}.xexp-hdr-link:hover{text-decoration:underline}.xexp-hdr-error{font-size:11px;color:var(--dsw-alias-state-error-primary,#dc2626);max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}";
+const PANEL_CSS = ".xexp-hdr{display:inline-flex;align-items:center;gap:6px}.xexp-check{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--dsw-alias-label-secondary,#4b5563);cursor:pointer;user-select:none}.xexp-check input{accent-color:var(--dsw-alias-brand-primary,#4f46e5);width:13px;height:13px;margin:0;cursor:pointer}.xexp-hdr-btn{padding:2px 8px;border-radius:6px;border:1px solid var(--dsw-alias-border-l2,#cbd5e1);background:transparent;color:var(--dsw-alias-label-secondary,#4b5563);font-size:11px;font-weight:600;cursor:pointer}.xexp-hdr-btn:hover:not(:disabled){border-color:var(--dsw-alias-brand-primary,#4f46e5);color:var(--dsw-alias-brand-primary,#4f46e5)}.xexp-hdr-btn:disabled{opacity:.6;cursor:default}.xexp-hdr-error{font-size:11px;color:var(--dsw-alias-state-error-primary,#dc2626);max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}";
 const PLUGIN_ID = "@deepseek-ai/dsh-export-conversation-pdf";
 const STATUS_ROUTE = "/dsh/cordis/export-conversation/status";
 let environmentAlertShown = false;
@@ -45,8 +45,8 @@ function apply(ctx) {
     return "";
   }
 
-  async function doExportFetch(sessionId, includeThinking) {
-    const url = "/dsh/cordis/export-conversation/trigger?sessionId=" + encodeURIComponent(sessionId) + "&thinking=" + (includeThinking ? "1" : "0");
+  async function doExportFetch(sessionId, includeThinking, includeWebSearch) {
+    const url = "/dsh/cordis/export-conversation/trigger?sessionId=" + encodeURIComponent(sessionId) + "&thinking=" + (includeThinking ? "1" : "0") + "&webSearch=" + (includeWebSearch ? "1" : "0");
     console.error("[xexp] trigger GET " + url);
     const resp = await window.fetch(url, { method: "GET", headers: { Accept: "application/json" } });
     let body = null;
@@ -60,8 +60,16 @@ function apply(ctx) {
     return { url: String(body.url || ""), filename: String(body.filename || "plik.pdf") };
   }
 
+  function downloadUrl(url, filename) {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+  }
+
   function PdfHeaderAction(props) {
     const [includeThinking, setIncludeThinking] = React.useState(false);
+    const [includeWebSearch, setIncludeWebSearch] = React.useState(false);
     const [state, setState] = React.useState({ status: "idle", url: "", filename: "", error: "" });
 
     async function onExport() {
@@ -70,8 +78,8 @@ function apply(ctx) {
       if (sessionId === "") { console.error("[xexp] no session id; props keys=" + Object.keys(props || {}).join(",")); setState({ status: "error", url: "", filename: "", error: "Brak identyfikatora sesji w tym widoku." }); return; }
       setState({ status: "busy", url: "", filename: "", error: "" });
       try {
-        const v = await doExportFetch(sessionId, includeThinking);
-        if (v.url !== "") setState({ status: "done", url: v.url, filename: v.filename, error: "" });
+        const v = await doExportFetch(sessionId, includeThinking, includeWebSearch);
+        if (v.url !== "") { downloadUrl(v.url, v.filename); setState({ status: "idle", url: "", filename: "", error: "" }); }
         else setState({ status: "error", url: "", filename: "", error: "Eksport nie zwrócił adresu pobierania." });
       } catch (err) {
         const msg = String((err && err.message) || err);
@@ -86,8 +94,11 @@ function apply(ctx) {
         React.createElement("input", { type: "checkbox", checked: includeThinking, disabled: busy, onChange: function (e) { setIncludeThinking(e.target.checked === true); } }),
         React.createElement("span", null, "thinking"),
       ),
+      React.createElement("label", { className: "xexp-check", title: "Dołącz wyszukiwania web_search i adresy pobrane przez web_fetch" },
+        React.createElement("input", { type: "checkbox", checked: includeWebSearch, disabled: busy, onChange: function (e) { setIncludeWebSearch(e.target.checked === true); } }),
+        React.createElement("span", null, "web-search"),
+      ),
       React.createElement("button", { type: "button", className: "xexp-hdr-btn", onClick: onExport, disabled: busy, title: "Eksportuj rozmowę do PDF" }, busy ? "…" : "PDF"),
-      state.status === "done" && React.createElement("a", { className: "xexp-hdr-link", href: state.url, download: state.filename, title: state.filename }, "Pobierz PDF"),
       state.status === "error" && React.createElement("span", { className: "xexp-hdr-error", title: state.error }, "✗ " + (state.error.length > 90 ? state.error.slice(0, 90) + "…" : state.error)),
     );
   }

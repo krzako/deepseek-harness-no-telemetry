@@ -2,7 +2,7 @@
  * @deepseek-ai/dsh-export-conversation-pdf — host half (persistent Cordis plugin).
  *
  * Exports the current conversation to PDF:
- *  - GET /dsh/cordis/export-conversation/trigger?sessionId=<id>&thinking=0|1 -> JSON {ok,url,filename,error}
+ *  - GET /dsh/cordis/export-conversation/trigger?sessionId=<id>&thinking=0|1&webSearch=0|1 -> JSON {ok,url,filename,error}
  *  - GET /dsh/cordis/export-conversation/file?token=<24 hex>                 -> PDF bytes (attachment)
  *  - model tool `export_conversation_pdf` ({includeThinking}) for the agent (/pdf, /pdf-thinking)
  *  - service `exportConversationPdf.export(args)` for other plugins
@@ -19,6 +19,7 @@ import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { conversationPdfFilename, conversationStats, conversationTitle, webActivityKind } from './host-logic.mjs'
 
 export const name = 'export-conversation-pdf'
 export const inject = ['webServer', 'sessionQuery', 'tools']
@@ -36,12 +37,6 @@ const downloads = new Map()
 
 /** Injected sessionQuery service; bound in apply() before any request can arrive. */
 let sessionQuery = null
-
-function slug(s) {
-  let out = String(s).normalize('NFC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '')
-  if (out.length > 60) out = out.slice(0, 60).replace(/-+$/, '')
-  return out === '' ? 'rozmowa' : out
-}
 
 function randomToken() {
   return randomBytes(12).toString('hex')
@@ -211,27 +206,33 @@ function runRenderer(scriptArgs) {
 }
 
 /** Full export pipeline: read session -> spec JSON -> render.mjs -> tokenized download. */
-async function doExport({ sessionId, includeThinking }) {
+async function doExport({ sessionId, includeThinking, includeWebSearch }) {
   const environment = await checkRendererEnvironment()
   if (!environment.ok) return { ok: false, url: '', filename: '', error: environment.error + '\n\n' + environment.installHint, environmentError: true }
   if (sessionId === '') return { ok: false, url: '', filename: '', error: 'Brak identyfikatora sesji.' }
-
-  let title = 'Rozmowa'
-  let cwd = null
-  try {
-    const t = await sessionQuery.readTitleSnapshot(sessionId)
-    if (t && typeof t.title === 'string' && t.title.trim() !== '') title = t.title.trim()
-    if (t && t.header && typeof t.header.cwd === 'string' && t.header.cwd !== '') cwd = t.header.cwd
-  } catch { /* domyślne wartości */ }
 
   let log
   try { log = await sessionQuery.readSession(sessionId) } catch (err) {
     return { ok: false, url: '', filename: '', error: 'Nie udało się odczytać rozmowy: ' + String((err && err.message) || err) }
   }
   const allEvents = log && Array.isArray(log.events) ? log.events : []
+  const title = conversationTitle(allEvents)
+  const stats = conversationStats(allEvents)
+  const cwd = log && log.session && typeof log.session.cwd === 'string' && log.session.cwd !== '' ? log.session.cwd : null
   // Pełna historia (raw log), nie tylko bieżąca powierzchnia — po kompaktacji
   // surface traci starsze wiadomości użytkownika, a eksport ma być wierny.
-  const events = allEvents.filter((ev) => ev && (ev.type === 'user/message' || ev.type === 'assistant/message'))
+  const webSearchCallIds = new Set(allEvents
+    .filter((ev) => ev && ev.type === 'tool/call' && webActivityKind(ev.data) === 'search')
+    .map((ev) => String(ev.data.callId)))
+  const events = allEvents.filter((ev) => {
+    if (!ev) return false
+    if (ev.type === 'user/message' || ev.type === 'assistant/message') return true
+    if (!includeWebSearch) return false
+    if (ev.type === 'tool/call') return webActivityKind(ev.data) !== null
+    if (ev.type !== 'tool/result' || !ev.data || !ev.data.message) return false
+    const source = ev.data.message.source
+    return source && webSearchCallIds.has(String(source.callId))
+  })
   if (events.length === 0) {
     return { ok: false, url: '', filename: '', error: 'Rozmowa jest pusta — brak wiadomości do wyeksportowania.' }
   }
@@ -239,10 +240,18 @@ async function doExport({ sessionId, includeThinking }) {
   await mkdir(OUT_DIR, { recursive: true })
 
   const token = randomToken()
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15).replace('T', '-')
-  const filename = 'rozmowa-' + slug(title) + '-' + stamp + '.pdf'
+  const sessionStartedAt = log && log.session && typeof log.session.createdAt === 'number' && log.session.createdAt > 0
+    ? log.session.createdAt
+    : stats.startedAt
+  const filename = conversationPdfFilename({
+    startedAt: sessionStartedAt,
+    title,
+    messageCount: stats.messageCount,
+    includeThinking: includeThinking === true,
+    includeWebSearch: includeWebSearch === true,
+  })
   const specPath = join(OUT_DIR, token + '.json')
-  await writeFile(specPath, JSON.stringify({ title: title, includeThinking: includeThinking === true, events: events }), 'utf8')
+  await writeFile(specPath, JSON.stringify({ title: title, includeThinking: includeThinking === true, includeWebSearch: includeWebSearch === true, events: events }), 'utf8')
 
   let pdfDir = cwd !== null ? cwd : OUT_DIR
   let pdfPath = join(pdfDir, filename)
@@ -323,6 +332,7 @@ async function triggerHandler(req, res) {
     const qIdx = url.indexOf('?')
     let sessionId = ''
     let thinking = false
+    let webSearch = false
     if (qIdx >= 0) {
       for (const pair of url.slice(qIdx + 1).split('&')) {
         const eq = pair.indexOf('=')
@@ -332,10 +342,11 @@ async function triggerHandler(req, res) {
         try { v = decodeURIComponent(pair.slice(eq + 1)) } catch { v = '' }
         if (k === 'sessionId') sessionId = v
         else if (k === 'thinking') thinking = v === '1' || v.toLowerCase() === 'true'
+        else if (k === 'webSearch') webSearch = v === '1' || v.toLowerCase() === 'true'
       }
     }
-    const result = await doExport({ sessionId: sessionId, includeThinking: thinking })
-    await debugLog('TRIGGER-DONE sessionId=[' + sessionId + '] thinking=' + String(thinking) + ' ok=' + String(result.ok) + ' error=' + JSON.stringify(result.error || '') + ' url=' + JSON.stringify(result.url || ''))
+    const result = await doExport({ sessionId: sessionId, includeThinking: thinking, includeWebSearch: webSearch })
+    await debugLog('TRIGGER-DONE sessionId=[' + sessionId + '] thinking=' + String(thinking) + ' webSearch=' + String(webSearch) + ' ok=' + String(result.ok) + ' error=' + JSON.stringify(result.error || '') + ' url=' + JSON.stringify(result.url || ''))
     return respondJson(200, result)
   } catch (err) {
     await debugLog('TRIGGER-CATCH error=' + JSON.stringify(String((err && err.message) || err)))
@@ -348,7 +359,7 @@ async function exportPdf(args) {
   try {
     if (!args || typeof args !== 'object') return { ok: false, url: '', filename: '', error: 'Nieprawidłowe argumenty eksportu.' }
     const sessionId = typeof args.sessionId === 'string' ? args.sessionId : ''
-    return await doExport({ sessionId: sessionId, includeThinking: args.includeThinking === true })
+    return await doExport({ sessionId: sessionId, includeThinking: args.includeThinking === true, includeWebSearch: args.includeWebSearch === true })
   } catch (err) {
     return { ok: false, url: '', filename: '', error: 'Błąd eksportu: ' + String((err && err.message) || err) }
   }
@@ -375,8 +386,8 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'export_conversation_pdf',
-    description: 'Exportuje bieżącą rozmowę z agentem do pliku PDF (A4, czytelny szablon, emotki zachowane). includeThinking=true dołącza bloki myślenia modelu. Używaj, gdy użytkownik prosi o eksport rozmowy do PDF — np. pisze /pdf lub /pdf-thinking albo wprost „wyeksportuj rozmowę”. Zwraca ok/url/filename; podaj użytkownikowi url jako klikalny link pobierania.',
-    parameters: { includeThinking: { type: 'boolean' } },
+    description: 'Exportuje bieżącą rozmowę z agentem do pliku PDF (A4, czytelny szablon, emotki zachowane). includeThinking=true dołącza bloki myślenia modelu. includeWebSearch=true dołącza zapytania i wyniki web_search oraz adresy pobrane przez web_fetch; obie opcje są domyślnie wyłączone. Używaj, gdy użytkownik prosi o eksport rozmowy do PDF — np. pisze /pdf lub /pdf-thinking albo wprost „wyeksportuj rozmowę”. Zwraca ok/url/filename; podaj użytkownikowi url jako klikalny link pobierania.',
+    parameters: { includeThinking: { type: 'boolean' }, includeWebSearch: { type: 'boolean' } },
     output: {
       schema: {
         type: 'object',
@@ -393,7 +404,7 @@ export function apply(ctx) {
     async execute(args, exec) {
       const sessionId = exec && exec.agent && typeof exec.agent.id === 'string' ? exec.agent.id : ''
       if (sessionId === '') return { ok: false, url: '', filename: '', error: 'Nie udało się ustalić identyfikatora sesji.' }
-      const res = await doExport({ sessionId: sessionId, includeThinking: args && args.includeThinking === true })
+      const res = await doExport({ sessionId: sessionId, includeThinking: args && args.includeThinking === true, includeWebSearch: args && args.includeWebSearch === true })
       return {
         ok: res.ok === true,
         url: typeof res.url === 'string' ? res.url : '',

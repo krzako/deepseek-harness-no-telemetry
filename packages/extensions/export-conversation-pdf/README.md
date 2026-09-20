@@ -18,6 +18,10 @@ adapter owns no durable event stream or mutable state relation.
 - temporary renderer input files live under the OS temp directory instead of the
   installed package directory;
 - download tokens use `crypto.randomBytes`.
+- optionally exports `web_search` requests and their matching results alongside
+  user and assistant messages;
+- the same opt-in includes each `web_fetch` URL as a short activity entry while
+  omitting the fetched page body; other tool calls remain omitted.
 
 ## Docker requirement
 

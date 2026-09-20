@@ -35,7 +35,7 @@
     "README.md"
   ],
   "scripts": {
-    "check": "node --check index.js && node --check client.js && node --check render.mjs && node --check host-logic.mjs"
+    "check": "node --check index.js && node --check client.js && node --check render.mjs && node --check host-logic.mjs && node --test host-logic.test.mjs"
   },
   "license": "MIT"
 }
