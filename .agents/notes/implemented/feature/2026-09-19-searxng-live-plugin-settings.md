@@ -2,8 +2,6 @@
 
 Status: implemented
 
-English | [中文](2026-09-19-searxng-live-plugin-settings.zh.md)
-
 ## Problem
 
 The SearXNG provider accepted composition fields and `SEARXNG_BASE_URL`, but the Web settings page could not edit them. A deployed user therefore saw `web_search` without any product surface for choosing the instance or its default query options, and changing those values required editing deployment configuration and restarting the process.

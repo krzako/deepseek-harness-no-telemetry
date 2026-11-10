@@ -191,8 +191,8 @@ it('keeps every recorded session owned, pinned, redacted, and header-scrubbed', 
   }
 })
 
-it('keeps a current v2 majority plus the bounded declared v0/v1 migration corpus', async () => {
-  expect(SESSION_FORMAT_VERSION).toBe(2)
+it('keeps a retained v2 majority plus the bounded declared v0/v1 migration corpus', async () => {
+  expect(SESSION_FORMAT_VERSION).toBe(3)
   const owners = (await scenarios()).filter(scenario => scenario.manifest.session === undefined)
   const inventory = await Promise.all(owners.map(async scenario => ({
     key: scenario.key,

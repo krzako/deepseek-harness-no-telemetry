@@ -1,0 +1,29 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false
+  },
+  "include": [
+    "./**/*.ts"
+  ],
+  "references": [
+    {
+      "path": ".."
+    },
+    {
+      "path": "../../../core/agent-loop"
+    },
+    {
+      "path": "../../../llm/llm-deepseek"
+    },
+    {
+      "path": "../../../session/session-persistence-jsonl"
+    },
+    {
+      "path": "../../../test-support/agent-loop-testkit"
+    }
+  ]
+}

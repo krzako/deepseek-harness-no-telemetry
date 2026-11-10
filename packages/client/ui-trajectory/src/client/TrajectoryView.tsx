@@ -7,6 +7,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InjectFace, PropsLocale, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type {} from '@deepseek-ai/dsh-agent-codex/types'
 import {
   TrajectoryTable,
   type TrajectoryRequestNumber,
@@ -14,6 +15,7 @@ import {
 } from './TrajectoryTable.tsx'
 import { TrajectoryToolbar } from './TrajectoryToolbar.tsx'
 import { TrajectoryTimeline } from './TrajectoryTimeline.tsx'
+import { CodexAuditLedger } from './CodexAuditLedger.tsx'
 import {
   appendTrajectoryPartialLayout, deriveTrajectoryLayout,
   type TrajectoryTurnModel,
@@ -79,6 +81,7 @@ export interface TrajectoryViewInjected {
   }
   loadOlder: () => Promise<boolean>
   loadImage: MessageImageLoader
+  loadAuditArtifact: (eventId: string, sha256: string) => Promise<string>
   setActualDuration: (actualDuration: boolean) => void
 }
 
@@ -127,7 +130,7 @@ function addUsage(
 }
 
 export function TrajectoryView({
-  useSession, useTrajectory, useDuration, loadOlder, loadImage, setActualDuration,
+  useSession, useProjection, useTrajectory, useDuration, loadOlder, loadImage, loadAuditArtifact, setActualDuration,
   viewRequest, completeViewRequest, renderSlot, t,
 }: ConvViewProps
   & PropsRenderSlots<'conversation.trajectory.images'>
@@ -156,6 +159,7 @@ export function TrajectoryView({
     readonly index: number
   } | null>(null)
   const completeInspection = useTrajectory(snapshot => snapshot)
+  const codexBound = useProjection('codexThreadBinding') === true
   const latestNodeSeq = completeInspection.eventNodes.at(-1)?.seq
   const [historyTailSeq, setHistoryTailSeq] = useState(latestNodeSeq)
   const [historyNodeLimit, setHistoryNodeLimit] = useState(HISTORY_PAGE_NODES)
@@ -506,6 +510,7 @@ export function TrajectoryView({
   return (
     <div className={css.root} data-conversation-composer-overlay="">
       <TrajectoryToolbar
+        codexBound={codexBound}
         actualDuration={actualDuration}
         onActualDurationChange={(nextActualDuration) => {
           setActualDuration(nextActualDuration)
@@ -536,6 +541,13 @@ export function TrajectoryView({
         onRangeChange={handleTimelineRangeChange}
         onRecordSelect={handleTimelineRecordSelect}
         onRecordFocus={handleTimelineRecordFocus}
+      />
+      <CodexAuditLedger
+        facts={completeInspection.codexAuditFacts ?? []}
+        hasOlderRecords={sessionHasOlderHistory}
+        loadOlder={loadOlder}
+        loadArtifact={loadAuditArtifact}
+        t={t}
       />
       <div className={css.ledger}>
         <TrajectoryTable

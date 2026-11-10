@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-attachment
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 You can attach images and generic files to prompts, and the harness keeps them durably: each source image is admitted and normalized before your message is processed, while any other file is stored byte-for-byte with no format or size limits, and both reappear in conversation history across restarts of the same session. The shipped `dsh` composition enables this with no setup. Browser paths, provider URLs, local storage paths, and base64 never enter durable session events. Images accept raster formats (PNG, JPEG, WebP, GIF) under deployment limits; files accept anything, and the model reads a stored file on demand from its saved read-only path instead of receiving its bytes. Stored objects are never deleted automatically, and audio and video have no dedicated handling yet.
@@ -137,3 +135,5 @@ Resumed and forked sessions may share immutable objects, so any retention policy
 Audio and video would need dedicated lifecycle and provider contracts beyond the verbatim file path, and the role-neutral `ImageBlock` leaves assistant-side image output as forward compatibility — current production adapters declare text-only output, so only user content carries images. Both directions are undecided.
 
 </details>
+
+`restoreImage({ ref, data }, signal?)` is the archive-import operation for an existing image reference. It preserves exact encoded bytes, the content-addressed ID and recorded provenance instead of applying the destination normalization policy. The local backend checks digest, byte count, media type, intrinsic dimensions and complete raster decoding before its existing durable immutable-object commit. Current admission byte/pixel/dimension limits may reject an archive image explicitly; they do not silently resize it. Input bytes and the decoded raster are resident during this operation. Cancellation is honored before publication starts; a durable commit already in progress completes. Backends without exact restore support reject with `ATTACHMENT_RESTORE_UNSUPPORTED`. The operation does not create Session events, install the rest of an archive or roll back previously committed shared objects.

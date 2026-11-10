@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-session-persistence
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-session-persistence` stores a session's event log durably and addresses each stored session through one per-session handle: the backend-neutral service (`ctx.sessionPersistence`) exposes `create`/`open`/`stat`/`list`, and `create`/`open` return a `SessionHandle` that carries every log read and write plus single-writer ownership. The persisted unit is the existing `SessionEvent` log — there is no parallel stored message type — and non-replayable metadata (format version, working directory, lineage, seed boundary) travels separately as `SessionHeader`. Backends own their storage, the seam owns the semantics: append-only contiguous logs, best-effort appends behind an explicit `flush` durability barrier, a torn physical tail that never reaches a reader, fail-closed validation of stored records, and in-process exclusion of a second writer. Mount the shipped [JSONL backend](../session-persistence-jsonl/README.md) (one artifact per session) and agent-loop persists and resumes sessions without the loop or the model knowing which backend is underneath.
@@ -162,3 +160,5 @@ These limits define where the seam's guarantees stop. They are current package c
 None.
 
 </details>
+
+Transactional imports use `SessionPersistence.beginImport`: the write handle flushes durably while normal list/stat/open remain fenced. Unsupported providers reject before creating a Session. JSONL reserves a fresh identity under its kernel write lease and persists a pending visibility marker before log bytes; publication durably changes the marker, invokes the synchronous registry callback, and restores the fence if that callback fails. Only this fresh, uncommitted import may be rolled back; published imports and pre-existing generations cannot be removed by rollback. The Agent factory starts the driver with durable seed data before publication, disposes it on failure, and reports cleanup errors instead of swallowing them. An interrupted process leaves a hidden, reserved pending import, never an automatically resumed Session; automatic recovery or deletion of abandoned imports is not implemented. Normal rollback removes the uncommitted log and markers but retains the stable POSIX lock inode. Windows namespace changes use the existing write-through move primitive.

@@ -7,6 +7,7 @@ import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import {
   fixtureContext,
   normalizeSessionSnapshot,

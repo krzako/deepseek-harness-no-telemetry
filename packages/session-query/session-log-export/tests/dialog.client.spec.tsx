@@ -23,7 +23,8 @@ function bench(
     )
   }
   const t = (key: keyof typeof en): string => en[key]
-  const props = { sessionId: SID, useSessionLogDownload, dismiss, t } as unknown as SessionLogDownloadDialogProps
+  const props = { sessionId: SID, useSessionLogDownload, dismiss, t,
+    confirm: (id: SessionId, format: 'portable' | 'log', workspace?: boolean) => controller.confirm(id, format, workspace) } as unknown as SessionLogDownloadDialogProps
   const view = render(<SessionLogDownloadDialog {...props} />)
   return { controller, dismiss, view }
 }
@@ -31,6 +32,34 @@ function bench(
 afterEach(cleanup)
 
 describe('SessionLogDownloadDialog', () => {
+  it.each(['portable', 'log', 'workspace'] as const)('shows the plaintext warning before explicitly downloading %s', async (format) => {
+    const fetcher = vi.fn(async () => new Response('zip'))
+    const save = vi.fn()
+    const controller = new SessionLogDownloadController(fetcher, save)
+    const b = bench(controller)
+    await act(async () => { await controller.download(SID) })
+    const dialog = await b.view.findByRole('dialog', { name: 'Export unencrypted Session' })
+    expect(dialog.textContent).toContain('without automatic redaction')
+    expect(dialog.textContent).toContain('Anyone with the file can read its contents')
+    expect(dialog.textContent).toContain('log-only archive cannot fully restore agent state')
+    expect(fetcher).not.toHaveBeenCalled()
+    fireEvent.click(b.view.getByRole('button', { name: format === 'portable'
+      ? 'Download portable ZIP (unencrypted)' : format === 'workspace'
+        ? 'Download ZIP with workspace (unencrypted)' : 'Download log only (unencrypted)' }))
+    await waitFor(() => { expect(save).toHaveBeenCalledOnce() })
+    const query = new URL(save.mock.calls[0]?.[0] as string).searchParams
+    expect(query.get('format')).toBe(format === 'workspace' ? 'portable' : format)
+    expect(query.get('includeWorkspace')).toBe(format === 'workspace' ? 'true' : null)
+  })
+
+  it('closes the warning without making a network request', async () => {
+    const fetcher = vi.fn(async () => new Response('zip'))
+    const b = bench(new SessionLogDownloadController(fetcher, vi.fn()))
+    await act(async () => { await b.controller.download(SID) })
+    fireEvent.click(b.view.getAllByRole('button', { name: 'Close' })[0]!)
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(b.controller.store.getSnapshot().bySession[SID]?.open).toBe(false)
+  })
   it('shows a controller failure and closes it without reading Session history', async () => {
     const b = bench()
     act(() => {
@@ -52,7 +81,8 @@ describe('SessionLogDownloadDialog', () => {
     const controller = new SessionLogDownloadController(() => pending, vi.fn())
     const b = bench(controller)
 
-    const download = controller.download(SID)
+    await controller.download(SID)
+    const download = controller.confirm(SID, 'portable')
     expect(await b.view.findByRole('dialog', { name: 'Exporting Session' })).toBeTruthy()
     release(new Response('zip', { status: 200 }))
     await download

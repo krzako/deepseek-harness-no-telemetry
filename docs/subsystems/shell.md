@@ -1,7 +1,5 @@
 # Bash Executor
 
-English | [中文](shell.zh.md)
-
 The bash execution seam is split across a Service Definition ([dsh-shell](../../packages/shell/shell), `ctx.shell`), Service Providers ([dsh-bash-local](../../packages/shell/bash-local) and [dsh-bash-sandbox](../../packages/shell/bash-sandbox)), and Consumer ([dsh-tool-bash](../../packages/shell/tool-bash), the `bash` schema). Generic background-job ids, ownership, and controls live in [jobs.md](jobs.md); this seam returns a task-free process handle. Raw process-group mechanics live behind the [subprocess seam](subprocess.md).
 
 Source: [`packages/shell/shell/src/types.ts`](../../packages/shell/shell/src/types.ts)
@@ -226,7 +224,7 @@ interface ShellProcessRead {
 
 ## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`). Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
 <a id="ctxshell--shellexecutor-abstract-seam"></a>
 

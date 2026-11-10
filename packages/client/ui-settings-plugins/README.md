@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-client-ui-settings-plugins
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-client-ui-settings-plugins` is the **Plugins** settings section of the dsh web client: users edit host-plane plugin configuration on its **Plugin configuration** tab, and feature plugins contribute their own pages through `settings.plugins.tab`. This package's own tab shows one expandable card per Host plugin whose configuration a user owns: a card shows the plugin's name and what it governs, and expanding it reveals hand-written controls bound to that plugin's settings namespace, each field marking whether the user overrode it and offering a reset back to the value the deployment composed. Cards stage edits locally and write only on save, with every write fenced by the namespace revision the form read.
@@ -25,7 +23,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Open the Plugins section in Settings and select the **Plugin configuration** tab to edit the host-plane plugins this deployment composes. The cards appear in this order: the shell executor (`bash`), the agent loop's tool-call parallelism (`agent-loop`), administrator web-search limits (`web-search`), SearXNG provider options (`web-search-searxng`), and subagent model selection (`subagent-model-selection`).
+Open the Plugins section in Settings and select the **Plugin configuration** tab to edit the host-plane plugins this deployment composes. The cards appear in this order: the shell executor (`bash`), the agent loop's tool-call parallelism (`agent-loop`), Codex driver selection (`codex`), administrator web-search limits (`web-search`), SearXNG provider options (`web-search-searxng`), and subagent model selection (`subagent-model-selection`).
 
 ### What appears here
 
@@ -34,6 +32,8 @@ The tab reads which settings namespaces the Host serves and dispatches one slot 
 ### Editing and saving
 
 A card stages what the user types and writes it only when they save. Each control renders staged text, so what is on screen is exactly what a save would store; **Discard** drops the drafts, and a card holding unsaved edits says so on its header even while collapsed. A successful save collapses the card after the read-back confirms the writes; a failed save keeps the card open, reports the failure, and retains the drafts for correction. A reset stages the composed default rather than writing immediately, and a draft the field does not accept blocks the save instead of being dropped. The Host is the only authority on whether a value was accepted.
+
+The Codex card switches automatic full-driver selection for matching new sessions and edits its optional display `label`. Without a label, the card uses the settings key `codex`. Off uses the standard agent loop; sessions that have started a turn retain their driver. DSH always runs Codex without its inner sandbox and relies on the Docker boundary, so the card has no sandbox control. Model routes remain defined under `codex.providers` in `settings.yaml`.
 
 The Web Search card exposes the combined result cap, query cap, Host-wide concurrent request cap, and timeout; each accepts only a positive integer. The SearXNG card exposes every option its Host adapter accepts: instance URL, language, comma-separated categories, and SafeSearch level. URL and SafeSearch drafts are checked before saving; accepted provider changes affect the next search because the provider reads its live settings source for every request. **Test connection** sends one small search through the saved Host configuration and reports success or failure in the card. Pending edits must be saved first, so the result always describes the values shown as persisted.
 

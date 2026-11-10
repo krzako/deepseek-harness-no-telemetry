@@ -4,7 +4,10 @@ import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /** Download phases presented by the shared modal. */
-export type SessionLogDownloadStatus = 'downloading' | 'success' | 'error'
+export type SessionLogDownloadStatus = 'confirmation' | 'downloading' | 'success' | 'error'
+
+/** Explicit browser choice between portable context and a transcript-only ZIP. */
+export type SessionArchiveFormat = 'portable' | 'log'
 
 /** One Session's current download-dialog state. */
 export interface SessionLogDownloadEntry {
@@ -72,16 +75,32 @@ export class SessionLogDownloadController {
   ) {}
 
   /**
-   * Download one Session tree; concurrent gestures for the same Session share one operation.
+   * Open the plaintext warning; no request or download starts before confirmation.
    * @param sessionId - root Session whose ZIP includes descendants and attachments.
-   * @returns after the browser save starts, an error state is published, or a late post-disposal request is ignored.
+   * @returns immediately after opening, or after an already-active download settles.
    */
   download(sessionId: SessionId): Promise<void> {
     const existing = this.active.get(sessionId)
     if (existing !== undefined) return existing.done
     if (this.disposed) return Promise.resolve()
+    this.publish(sessionId, { open: true, status: 'confirmation', error: null })
+    return Promise.resolve()
+  }
+
+  /** Start a download only from an open confirmation dialog.
+   * Concurrent confirmations share the active operation and its captured format.
+   * @param sessionId - Session whose plaintext warning was acknowledged.
+   * @param format - explicitly selected portable archive or transcript-only log.
+   * @param includeWorkspace - explicit opt-in to include workspace files in a portable archive.
+   * @returns after browser handoff or a published error; dismissed/disposed requests do nothing.
+   */
+  confirm(sessionId: SessionId, format: SessionArchiveFormat, includeWorkspace = false): Promise<void> {
+    const existing = this.active.get(sessionId)
+    if (existing !== undefined) return existing.done
+    const entry = this.store.getSnapshot().bySession[String(sessionId)]
+    if (this.disposed || entry?.open !== true || entry.status !== 'confirmation') return Promise.resolve()
     const abort = new AbortController()
-    const done = this.run(sessionId, abort.signal).finally(() => {
+    const done = this.run(sessionId, format, includeWorkspace, abort.signal).finally(() => {
       this.active.delete(sessionId)
     })
     this.active.set(sessionId, { abort, done })
@@ -109,12 +128,14 @@ export class SessionLogDownloadController {
     await Promise.allSettled(active.map(operation => operation.done))
   }
 
-  private async run(sessionId: SessionId, signal: AbortSignal): Promise<void> {
+  private async run(sessionId: SessionId, format: SessionArchiveFormat, includeWorkspace: boolean, signal: AbortSignal): Promise<void> {
     this.publish(sessionId, { open: true, status: 'downloading', error: null })
     try {
       const url = new URL('/api/session.export', hostBase())
       url.searchParams.set('sessionId', sessionId)
       url.searchParams.set('includeDescendants', 'true')
+      url.searchParams.set('format', format)
+      if (includeWorkspace) url.searchParams.set('includeWorkspace', 'true')
       const response = await this.fetcher(url, { method: 'HEAD', signal })
       if (!response.ok) {
         const detail = await response.text().catch(() => '')

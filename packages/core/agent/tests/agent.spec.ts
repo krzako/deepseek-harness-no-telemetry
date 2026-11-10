@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId, type UserMessage } from '@deepseek-ai/dsh-session'
@@ -12,6 +12,7 @@ import type {
   Agent,
   AgentCancelCause,
   AgentFactory,
+  AgentTransferPorts,
   AgentStatus,
   CreateAgentOptions,
   ResumeAgentOptions,
@@ -405,6 +406,73 @@ describe('AgentRegistry factory seam', () => {
     await expect(ctx.agents.create({ sessionId: SessionId('before-s') })).resolves.toBeDefined()
     await owner.dispose()
     await expect(ctx.agents.create({ sessionId: SessionId('after-s') })).rejects.toThrow(/no agent factory/)
+  })
+
+  it('selects an alternative driver only when its selector accepts the Session', async () => {
+    const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    const id = SessionId('driver-choice')
+    const session = Session.create(id)
+    const selected = { driverId: 'selected', agent: stubAgent('selected'), start: vi.fn(), dispose: vi.fn() }
+    const selector = vi.fn((_ctx, _id, options: { provider?: string }) =>
+      options.provider === 'preferred' ? selected : undefined)
+    expect(() => ctx.agents.setDriverSelector({ driverId: 'selected', selectDriver: selector }))
+      .toThrow(/requires canonical transfer ports/)
+    ctx.agents.setTransferPorts('selected', {
+      source: { driverId: 'selected', exportArchivedContext: vi.fn(), exportPortableContext: vi.fn() },
+      target: { driverId: 'selected', importCapabilities: vi.fn(), describeAuthentication: vi.fn(), importPortableContext: vi.fn(), createImportedAgent: vi.fn() },
+    })
+    const owner = await ctx.plugin(Object.assign((inner: Context) => {
+      inner.agents.setDriverSelector({ driverId: 'selected', selectDriver: selector })
+      expect(() => inner.agents.setDriverSelector({ driverId: 'selected', selectDriver: selector })).toThrow(/already registered/)
+    }, { inject: ['agents'] }))
+
+    expect(ctx.agents.createDriver(ctx, id, { provider: 'ordinary' }, session)).toBeUndefined()
+    expect(ctx.agents.createDriver(ctx, id, { provider: 'preferred' }, session)).toBe(selected)
+    expect(ctx.agents.createDriver(ctx, id, { provider: 'preferred' }, session, { kind: 'import', driverId: 'selected' })).toBe(selected)
+    expect(ctx.agents.createDriver(ctx, id, { provider: 'preferred' }, session, { kind: 'import', driverId: 'standard' })).toBeUndefined()
+    expect(() => ctx.agents.createDriver(ctx, id, { provider: 'ordinary' }, session, { kind: 'import', driverId: 'selected' }))
+      .toThrow(/requires driver "selected", got "standard"/)
+    const explicit = { driverId: 'explicit', agent: stubAgent('explicit'), start: vi.fn(), dispose: vi.fn() }
+    const createExplicit = vi.fn(() => explicit)
+    expect(() => ctx.agents.setDriverFactory('preferred', { driverId: 'explicit', createDriver: createExplicit }))
+      .toThrow(/requires canonical transfer ports/)
+    ctx.agents.setTransferPorts('explicit', {
+      source: { driverId: 'explicit', exportArchivedContext: vi.fn(), exportPortableContext: vi.fn() },
+      target: { driverId: 'explicit', importCapabilities: vi.fn(), describeAuthentication: vi.fn(), importPortableContext: vi.fn(), createImportedAgent: vi.fn() },
+    })
+    ctx.agents.setDriverFactory('preferred', { driverId: 'explicit', createDriver: createExplicit })
+    expect(ctx.agents.createDriver(ctx, id, { provider: 'preferred' }, session)).toBe(explicit)
+    expect(() => ctx.agents.createDriver(ctx, id, { provider: 'preferred' }, session, { kind: 'resume', driverId: 'selected' }))
+      .toThrow(/requires driver "selected", got "explicit"/)
+    expect(createExplicit).toHaveBeenCalledTimes(1)
+    expect(selector).toHaveBeenCalledTimes(4)
+
+    await owner.dispose()
+    expect(ctx.agents.createDriver(ctx, id, { provider: 'ordinary' }, session)).toBeUndefined()
+  })
+
+  it('registers a driver transfer pair for the caller lifetime without provider-pair routing', async () => {
+    const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    const ports: AgentTransferPorts = {
+      source: { driverId: 'third', exportArchivedContext: vi.fn(), exportPortableContext: vi.fn() },
+      target: { driverId: 'third', importCapabilities: vi.fn(), describeAuthentication: vi.fn(), importPortableContext: vi.fn(), createImportedAgent: vi.fn() },
+    }
+    expect(() => ctx.agents.getTransferPorts('third')).toThrow(/unavailable/)
+    expect(() => ctx.agents.setTransferPorts('third', {
+      ...ports, target: { ...ports.target, createImportedAgent: undefined },
+    } as unknown as AgentTransferPorts)).toThrow(/import publication/)
+    expect(() => ctx.agents.setTransferPorts('third', {
+      ...ports, target: { ...ports.target, driverId: 'other' },
+    })).toThrow(/must match/)
+    const owner = await ctx.plugin(Object.assign((inner: Context) => {
+      inner.agents.setTransferPorts('third', ports)
+      expect(() => inner.agents.setTransferPorts('third', ports)).toThrow(/already registered/)
+    }, { inject: ['agents'] }))
+    expect(ctx.agents.getTransferPorts('third')).toBe(ports)
+    await owner.dispose()
+    expect(() => ctx.agents.getTransferPorts('third')).toThrow(/unavailable/)
   })
 
   it('canonicalizes an already traced Service before tracing it for the caller', async () => {

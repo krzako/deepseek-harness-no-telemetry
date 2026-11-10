@@ -610,6 +610,28 @@ describe('prompt and cancel errors', () => {
       sessionId: SID, attachmentId: 'attachment-1',
     }])
   })
+
+  it('assembles multibyte audit text only after the verified stream ends', async () => {
+    const { api, session } = makeSession()
+    const bytes = new TextEncoder().encode('{"value":"ż"}')
+    const split = bytes.indexOf(0xc5) + 1
+    const done = deferred<undefined>()
+    api.onAuditArtifact = async function* () {
+      yield { data: btoa(String.fromCharCode(...bytes.slice(0, split))) }
+      await done.promise
+      yield { data: btoa(String.fromCharCode(...bytes.slice(split))) }
+    }
+    const pending = session.readAuditArtifact('event-1', 'a'.repeat(64))
+    let settled = false
+    void pending.then(() => { settled = true })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    done.resolve(undefined)
+    await expect(pending).resolves.toBe('{"value":"ż"}')
+    expect(api.callsOf('session.auditArtifact')).toEqual([{
+      sessionId: SID, eventId: 'event-1', sha256: 'a'.repeat(64),
+    }])
+  })
 })
 
 describe('rename', () => {

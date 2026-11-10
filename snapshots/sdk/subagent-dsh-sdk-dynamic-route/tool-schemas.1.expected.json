@@ -594,7 +594,7 @@
     },
     {
       "name": "web_search",
-      "description": "Search the web for current information. Provide 1–4 queries in the required queries array. Returns an optional summary answer and a list of source URLs.",
+      "description": "Search the web through SearXNG for current information. Provide 1–4 queries in the required queries array. Returns up to 12 combined source URLs and snippets.",
       "parameters": {
         "type": "object",
         "properties": {

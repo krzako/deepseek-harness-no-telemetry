@@ -83,7 +83,14 @@ export type OptionalSessionSeq = SessionSeq | null
  * immutable prior-generation, and current fast-path rules are recorded in
  * `.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md`.
  */
-export const SESSION_FORMAT_VERSION = 2
+export const SESSION_FORMAT_VERSION = 3
+
+/** Durable ancestry of a new Session created from another agent's portable context. */
+export interface SessionImportLineage extends Record<string, string> {
+  readonly sourceSessionId: SessionId
+  readonly sourceDriverId: string
+  readonly importId: string
+}
 
 /**
  * Immutable validated storage metadata, kept outside the conversation event log.
@@ -102,6 +109,8 @@ export interface SessionHeader {
   readonly cwd?: string
   /** The session this one was forked from (seed lineage), if any. */
   readonly parentSession?: SessionId
+  /** Portable import ancestry; distinct from a fork-inherited event prefix. */
+  readonly importLineage?: SessionImportLineage
   /**
    * Whether this Session contains a fork-inherited event prefix. The exact prefix
    * length is Session state rather than ordinary header metadata.
@@ -148,6 +157,7 @@ export interface CreateSessionOptions {
   readonly meta?: {
     readonly cwd?: string
     readonly parentSession?: SessionId
+    readonly importLineage?: SessionImportLineage
     readonly createdAt?: number
     readonly isSeeded?: boolean
     readonly origin?: 'subagent'

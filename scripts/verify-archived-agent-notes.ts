@@ -1,6 +1,7 @@
 /** Verify and append-seal the frozen Agent Note archive. */
 
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { AGENT_NOTE_CLASSES, agentNoteRoot } from './agent-note-tree.ts'
@@ -68,11 +69,22 @@ function runGit(args: string[]): string {
 function readBaselineManifest(ref: string): ArchiveManifest {
   runGit(['cat-file', '-e', `${ref}^{commit}`])
   const manifestEntry = runGit(['ls-tree', '--name-only', ref, '--', manifestRepoPath]).trim()
-  if (manifestEntry === '') return { version: 1, files: {} }
+  if (manifestEntry === '') return { version: 2, files: {} }
   return parseArchiveManifest(runGit(['show', `${ref}:${manifestRepoPath}`]))
 }
 
-let manifest: ArchiveManifest = { version: 1, files: {} }
+function verifySingleSourceMigration(ref: string, baseline: ArchiveManifest): string[] {
+  const migrationErrors: string[] = []
+  for (const path of Object.keys(baseline.files).filter(path => path.endsWith('.md') && !path.endsWith('.zh.md'))) {
+    const old = runGit(['show', `${ref}:.agents/notes/archived/${path}`])
+    const expected = old.replace(/^English \| \[中文\]\([^\n]*\.zh\.md(?:#[^\n)]*)?\)\r?\n(?:\r?\n)?/m, '')
+    const hash = `sha256:${createHash('sha256').update(expected).digest('hex')}`
+    if (manifest.files[path] !== hash) migrationErrors.push(`${path}: archived English content changed beyond switcher removal`)
+  }
+  return migrationErrors
+}
+
+let manifest: ArchiveManifest = { version: 2, files: {} }
 if (existsSync(manifestPath)) {
   try {
     manifest = parseArchiveManifest(readFileSync(manifestPath, 'utf8'))
@@ -82,12 +94,16 @@ if (existsSync(manifestPath)) {
 } else if (!writeMode) {
   errors.push('archived/manifest.json is required; seal new artifacts with `pnpm run verify-archived-agent-notes --write`')
 }
+if (writeMode && manifest.version === 1) manifest = { version: 2, files: {} }
 
 // CI supplies its trusted pre-change commit; local writes compare with committed HEAD.
 const baselineRef = process.env.DSH_ARCHIVE_BASE_REF ?? 'HEAD'
 try {
   const baseline = readBaselineManifest(baselineRef)
   errors.push(...validateArchiveManifestExtension(baseline, manifest))
+  if (baseline.version === 1 && manifest.version === 2) {
+    errors.push(...verifySingleSourceMigration(baselineRef, baseline))
+  }
 } catch (error: unknown) {
   errors.push(`archived/manifest.json: cannot read baseline ${JSON.stringify(baselineRef)}: ${error instanceof Error ? error.message : String(error)}`)
 }

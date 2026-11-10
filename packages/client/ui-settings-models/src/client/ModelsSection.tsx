@@ -14,6 +14,7 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
+import type { SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, IconPlusOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls this package's SlotMap merge (the two Models child slots).
@@ -72,6 +73,8 @@ export interface ProviderIdentity {
 interface EditorTarget extends ProviderIdentity {
   settingsNs: string
   settingsPath: readonly string[]
+  /** Settings revision captured when this row action opened. */
+  revision: number
   /** Writable credential identified under this page's conventional reference. */
   credentialRef?: string
   /** The adapter reports this route as one it does not ship (see {@link ProviderEditorProps.declared}). */
@@ -100,33 +103,33 @@ function renderProviderEditor({ target, ...props }: ProviderEditorRenderProps): 
 }
 
 /**
- * Remove one user-added provider and its page-managed credential. Credential
- * removal comes first so a second-step failure leaves the provider row visible
- * and the whole operation safely retryable; both unsets are idempotent.
- * The settings removal names the profile rather than rebuilding its whole
- * namespace from a partial view.
+ * Remove one user-added provider and its page-managed credential. The
+ * revision-checked profile removal comes first: a concurrent settings edit
+ * cannot cause credential loss. A later credential-cleanup refusal is reported
+ * separately and leaves the committed removal visible after refresh.
  * @param operations - the page's Host operations.
  * @param controller - the page store to refresh.
  * @param target - the provider's settings address and optional managed credential.
- * @returns the failure message, or undefined once the write and reload landed.
+ * @returns removal, refusal, or a warning that the credential remains.
  */
 export async function removeProviderProfile(
   operations: ModelsOperations,
   controller: ModelsSettingsStore,
-  target: { settingsNs: string; settingsPath: readonly string[]; credentialRef?: string },
-): Promise<string | undefined> {
-  if (target.credentialRef !== undefined) {
-    const credential = await operations.removeCredential(target.credentialRef)
-    if (credential !== undefined) return credential
-  }
+  target: { settingsNs: string; settingsPath: readonly string[]; revision: number; credentialRef?: string },
+): Promise<{ kind: 'removed' } | { kind: 'refused'; message: string } | { kind: 'credential-retained'; message: string }> {
   const written = await operations.writeSettings(
     target.settingsNs,
     [{ op: 'unset', path: [...target.settingsPath] }],
-    undefined,
+    target.revision,
   )
-  if (written.kind !== 'written') return written.message
+  if (written.kind !== 'written') return { kind: 'refused', message: written.message }
+  const credentialFailure = target.credentialRef === undefined
+    ? undefined
+    : await operations.removeCredential(target.credentialRef)
   await controller.load()
-  return undefined
+  return credentialFailure === undefined
+    ? { kind: 'removed' }
+    : { kind: 'credential-retained', message: credentialFailure }
 }
 
 /**
@@ -157,7 +160,7 @@ function keyConfiguredOf(row: ProviderRow): boolean {
     : row.derivedCredential?.configured === true
 }
 
-function targetOf(row: ProviderRow): EditorTarget {
+function targetOf(row: ProviderRow, namespace: SettingsNamespaceView): EditorTarget {
   const managedRef = deriveKeyRef(row.entry.provider)
   const credentialRef = row.apiKeyEnv === managedRef
     && row.credential?.configured === true
@@ -169,6 +172,7 @@ function targetOf(row: ProviderRow): EditorTarget {
     displayName: row.entry.displayName,
     settingsNs: row.entry.settingsNs,
     settingsPath: row.entry.settingsPath,
+    revision: namespace.revision,
     ...credentialRef === undefined ? {} : { credentialRef },
     // Only declared routes may expose route-owned fields.
     ...row.entry.declared === true ? { declared: true } : {},
@@ -209,8 +213,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   const [deleteTarget, setDeleteTarget] = useState<EditorTarget | undefined>(undefined)
   const [deleting, setDeleting] = useState(false)
   const [deleteFailure, setDeleteFailure] = useState<string | undefined>(undefined)
+  const [deleteNotice, setDeleteNotice] = useState<string | undefined>(undefined)
   const [savedTarget, setSavedTarget] = useState<ProviderIdentity | undefined>(undefined)
-  const [declaring, setDeclaring] = useState(false)
+  const [declaring, setDeclaring] = useState<'pi-ai' | 'codex' | undefined>(undefined)
   const [dismissedSetup, setDismissedSetup] = useState<ReadonlySet<string>>(() => new Set())
 
   const announceSaved = (target: ProviderIdentity): void => {
@@ -223,7 +228,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   const closeEditor = (changed: boolean, target: ProviderIdentity): void => {
     setEditing(undefined)
     setAdding(false)
-    setDeclaring(false)
+    setDeclaring(undefined)
     if (changed) announceSaved(target)
   }
 
@@ -251,10 +256,13 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
     setDeleting(true)
     setDeleteFailure(undefined)
     void removeProviderProfile(operations, controller, deleteTarget)
-      .then((failure) => {
-        if (failure !== undefined) {
-          setDeleteFailure(failure)
+      .then((outcome) => {
+        if (outcome.kind === 'refused') {
+          setDeleteFailure(outcome.message)
           return
+        }
+        if (outcome.kind === 'credential-retained') {
+          setDeleteNotice(`${t('deleteCredentialRetained')} ${outcome.message}`)
         }
         setDeleteTarget(undefined)
       })
@@ -299,10 +307,13 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   const addRow = addTarget === undefined
     ? undefined
     : state.rows.find(row => row.entry.provider === addTarget.provider)
-  // Hand-declared routes live in the pi-ai namespace, which is also the only
-  // one whose schema names the protocols one may speak; without it mounted
-  // there is nothing to declare and the entry point stays disabled.
+  // Pi-ai's custom-route card reads its protocol choices from that namespace;
+  // Codex uses its fixed format choices and its own settings namespace.
   const protocols = protocolChoices(state.namespaces.get('llm-pi-ai'), schema)
+  const declareNamespace = declaring === 'codex' ? 'codex' : 'llm-pi-ai'
+  const codexTaken = state.rows
+    .filter(row => row.entry.settingsNs === 'codex' && row.entry.provider.startsWith('codex:'))
+    .map(row => row.entry.provider.slice('codex:'.length))
 
   return (
     <div className={styles['section']}>
@@ -316,12 +327,13 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
             {providerCopy(t('savedProvider'), savedIdentity)}
           </p>
         )}
+      {deleteNotice === undefined ? null : <p className={styles['notice']} role="alert">{deleteNotice}</p>}
       <ul className={styles['rows']}>
         {configured.map((row) => {
-          const target = targetOf(row)
-          const namespace = state.namespaces.get(target.settingsNs)
+          const namespace = state.namespaces.get(row.entry.settingsNs)
           /* v8 ignore next -- the join marks a row configured only when its namespace resolved */
           if (namespace === undefined) return null
+          const target = targetOf(row, namespace)
           if (needsSetup(row, anyUsable) && !dismissedSetup.has(row.entry.provider)) {
             // First-run posture: the provider exists but has no key — the
             // setup card IS its presence on the page, until the user closes it.
@@ -390,7 +402,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                       // One card at a time: leaving `declaring` set would show
                       // the create card beside this editor, and closing either
                       // one discards the other's draft.
-                      setDeclaring(false)
+                      setDeclaring(undefined)
                       setAdding(false)
                       setEditing(open ? undefined : target)
                     }}
@@ -406,6 +418,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                         disabled={!state.writable}
                         onClick={() => {
                           setSavedTarget(undefined)
+                          setDeleteNotice(undefined)
                           setDeleteFailure(undefined)
                           setDeleteTarget(target)
                         }}
@@ -450,7 +463,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                     const row = addable.find(candidate => candidate.entry.provider === event.target.value)
                     /* v8 ignore next -- the select only lists addable rows */
                     if (row === undefined) return
-                    setEditing(targetOf(row))
+                    const namespace = state.namespaces.get(row.entry.settingsNs)
+                    if (namespace === undefined) return
+                    setEditing(targetOf(row, namespace))
                   }}
                 >
                   {addable.map(row => (
@@ -484,25 +499,23 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
             ? (
               <div className={styles['addCard']}>
                 <CustomProviderCard
-                  taken={state.rows.map(row => row.entry.provider)}
+                  family={declaring}
+                  taken={declaring === 'codex' ? codexTaken : state.rows.map(row => row.entry.provider)}
                   protocols={protocols}
                   /* v8 ignore next -- the card only opens from a button disabled without this namespace */
-                  revision={state.namespaces.get('llm-pi-ai')?.revision ?? 0}
+                  revision={state.namespaces.get(declareNamespace)?.revision ?? 0}
                   operations={operations}
                   t={t}
                   readOnly={!state.writable}
                   onClose={(changed) => {
-                    setDeclaring(false)
+                    setDeclaring(undefined)
                     if (changed) void controller.load()
                   }}
                 />
               </div>
             )
             : (
-              // One row for the two ways to gain a provider: adopt one the
-              // adapter already knows, or declare one it does not. Side by side
-              // and equal-width so they read as siblings and line up with the
-              // rows above, rather than two pills of different lengths.
+              // One row for installed routes and custom pi-ai or Codex routes.
               <div className={styles['addActions']}>
                 <button
                   type="button"
@@ -513,9 +526,11 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                     /* v8 ignore next -- the button is disabled while nothing is addable */
                     if (first === undefined) return
                     setSavedTarget(undefined)
-                    setDeclaring(false)
+                    setDeclaring(undefined)
                     setAdding(true)
-                    setEditing(targetOf(first))
+                    const namespace = state.namespaces.get(first.entry.settingsNs)
+                    if (namespace === undefined) return
+                    setEditing(targetOf(first, namespace))
                   }}
                 >
                   <IconPlusOutline16 size={14} />
@@ -529,11 +544,25 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                     setSavedTarget(undefined)
                     setAdding(false)
                     setEditing(undefined)
-                    setDeclaring(true)
+                    setDeclaring('pi-ai')
                   }}
                 >
                   <IconPlusOutline16 size={14} />
                   {t('customAdd')}
+                </button>
+                <button
+                  type="button"
+                  className={styles['addButton']}
+                  disabled={!state.namespaces.has('codex') || !state.writable}
+                  onClick={() => {
+                    setSavedTarget(undefined)
+                    setAdding(false)
+                    setEditing(undefined)
+                    setDeclaring('codex')
+                  }}
+                >
+                  <IconPlusOutline16 size={14} />
+                  {t('codexAdd')}
                 </button>
               </div>
             )}

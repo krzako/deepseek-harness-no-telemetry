@@ -73,7 +73,7 @@ import { registerPiAiFlows } from './login.ts'
 
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
-export { Config } from './config.ts'
+export { Config, PiAiProviderProfileSchema, resolveProfiles } from './config.ts'
 export type {
   PiAiCompatProfile,
   PiAiModality,
@@ -84,7 +84,7 @@ export type {
   PiAiThinkingFormat,
   ResolvedPiAiProviderProfile,
 } from './config.ts'
-export { recordKeyFor } from './auth.ts'
+export { authContextFrom, credentialStoreFrom, recordKeyFor } from './auth.ts'
 export { supportedProtocols } from './provider.ts'
 
 export const name = 'llm-pi-ai'
@@ -198,6 +198,15 @@ export function apply(ctx: Context, config: Config): void {
   const adapter = new PiAiAdapter({
     profiles,
     resolveApiKey,
+    describeAuthentication: async (profile) => {
+      const ref = profile.apiKeyEnv
+      if (ref === undefined) return { status: 'provider-managed' }
+      const credentials = ctx.get('credentials')
+      const configured = credentials === undefined
+        ? (launchEnvironmentOf(ctx).get(ref)?.value.length ?? 0) > 0
+        : (await credentials.describe(ref)).configured
+      return { status: configured ? 'configured' : 'missing', reference: ref }
+    },
     auth,
     resolveAttachments: () => ctx.get('attachments'),
     resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(

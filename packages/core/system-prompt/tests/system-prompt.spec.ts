@@ -343,6 +343,30 @@ describe('SystemPrompt', () => {
     ])
   })
 
+  it('renders literal sections without changing variable syntax while ordinary sections still interpolate', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    ctx.systemPrompt.variable('model', () => 'target')
+    ctx.systemPrompt.section({ name: 'ordinary', order: 0, text: 'Model: {{model}}' })
+    ctx.systemPrompt.section({ name: 'imported', order: 1, text: 'Keep {{source_only}} exactly.', literal: true })
+
+    const assembly = await ctx.systemPrompt.assemble()
+    expect(renderPrompt({ ...assembly, sections: contributed(assembly) })).toBe('Model: target\n\nKeep {{source_only}} exactly.')
+    expect(contributed(assembly)[1]).toEqual({ name: 'imported', text: 'Keep {{source_only}} exactly.', literal: true })
+  })
+
+  it('restores the literal flag and text for a complete section after a listener rewrite', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    ctx.systemPrompt.section({ name: 'imported', order: 0, text: '{{unbound}}', literal: true, complete: true })
+    ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
+      assembly.sections[0]!.text = 'changed'
+      delete assembly.sections[0]!.literal
+      return next()
+    })
+    expect(renderPrompt(await ctx.systemPrompt.assemble())).toBe('{{unbound}}')
+  })
+
   it('rejects multiple effective complete sections', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)

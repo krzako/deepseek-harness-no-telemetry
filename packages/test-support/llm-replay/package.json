@@ -36,7 +36,9 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-compaction": "workspace:^",
+    "@deepseek-ai/dsh-deepseek-llm-api-extensions": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
+    "@deepseek-ai/dsh-permission-presets": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^"
   },
   "dependencies": {

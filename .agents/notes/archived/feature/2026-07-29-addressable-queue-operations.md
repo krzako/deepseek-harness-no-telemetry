@@ -3,8 +3,6 @@
 Status: implemented
 Archived: 2026-07-31
 
-English | [中文](2026-07-29-addressable-queue-operations.zh.md)
-
 ## Problem
 
 The Web queue rendered pending messages but could not edit or delete one row. `MessageId` was insufficient as an address because callers may enqueue the same immutable message more than once. The browser also inferred queue retirement from turn and status events, so a row operation racing with driver claim had no authoritative outcome.

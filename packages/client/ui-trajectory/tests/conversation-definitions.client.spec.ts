@@ -8,10 +8,12 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { ConversationNodeAssembler, inspectRequestPrompt } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import { parseCodexAuditEventV1 } from '@deepseek-ai/dsh-agent-codex'
 import { AssistantStreamAccumulator } from '@deepseek-ai/dsh-llm/assistant-stream'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { registerTrajectoryAssistantDefinition } from '../src/client/trajectory-assistant-definition.ts'
 import { registerTrajectoryCompactionDefinitions } from '../src/client/trajectory-compaction-definition.ts'
+import { registerTrajectoryCodexAuditDefinition } from '../src/client/trajectory-codex-audit-definition.ts'
 import type { TrajectorySnapshot } from '../src/client/trajectory-contract.ts'
 import { registerTrajectoryMessageDefinitions } from '../src/client/trajectory-message-definitions.ts'
 import { registerTrajectoryRequestHeaderDefinition } from '../src/client/trajectory-request-header-definition.ts'
@@ -36,6 +38,7 @@ registerTrajectoryRequestHeaderDefinition(registrationContext)
 registerTrajectoryAssistantDefinition(registrationContext)
 registerTrajectoryToolDefinition(registrationContext)
 registerTrajectoryCompactionDefinitions(registrationContext)
+registerTrajectoryCodexAuditDefinition(registrationContext)
 
 class TestEventDefinitions {
   entries(): readonly ConversationNodeDefinition[] {
@@ -161,6 +164,54 @@ function assistantMessage(id: string, text: string) {
 }
 
 describe('Trajectory conversation Definitions', () => {
+  it('retains the complete model, compaction, tool, approval, and result order as audit facts only', () => {
+    const inline = { kind: 'inline', value: { text: 'recorded' } }
+    const base = { version: 1, time: 1_700_000_000_000, threadId: 'thread-1', turn: 1 }
+    const kinds = [
+      { kind: 'model/request', attemptId: 'attempt-1', purpose: 'inference',
+        stage: 'model-visible', apiFormat: 'responses', request: inline },
+      { kind: 'model/result', attemptId: 'attempt-1', purpose: 'inference', stage: 'codex', result: inline },
+      { kind: 'compaction/request', compactionId: 'compact-1', reason: 'limit', inputHistory: inline, prompt: inline },
+      { kind: 'compaction/result', compactionId: 'compact-1', result: inline },
+      { kind: 'tool/request', codexCallId: 'call-1', name: 'shell', arguments: inline },
+      { kind: 'tool/approval', codexCallId: 'call-1', decision: 'approved', request: inline },
+      { kind: 'tool/result', codexCallId: 'call-1', outcome: 'success', result: inline },
+    ]
+    const events = kinds.map((data, index) => at(index + 1, 'codex/audit-v1',
+      parseCodexAuditEventV1({ ...base, ...data, sequence: index + 1, eventId: `event-${index + 1}` })))
+    const value = assembler(events)
+    const projected = snapshot(value)
+    expect(projected.codexAuditFacts?.map(({ seq, fact }) => [seq, fact.kind, fact.eventId]))
+      .toEqual(kinds.map((data, index) => [index + 1, data.kind, `event-${index + 1}`]))
+    expect(projected.eventNodes).toEqual([])
+    value.replaceWindow(events, false)
+    value.flush()
+    expect(snapshot(value).codexAuditFacts?.map(({ fact }) => fact.kind)).toEqual(kinds.map(data => data.kind))
+  })
+
+  it('replays Codex audit facts in Session order without projecting duplicate Chat messages', () => {
+    const fact = (sequence: number, kind: 'model/request' | 'model/result') => ({
+      version: 1, sequence, eventId: `fact-${sequence}`, time: 1_700_000_000_000 + sequence,
+      threadId: 'thread-1', turn: 1, codexTurnId: 'turn-1', kind,
+      attemptId: 'attempt-1', purpose: 'inference', stage: 'codex',
+      ...(kind === 'model/request'
+        ? { stage: 'model-visible', apiFormat: 'responses', request: { kind: 'inline', value: { input: [] } } }
+        : { result: { kind: 'inline', value: { output: [] } } }),
+    })
+    const events = [
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'codex/audit-v1', fact(1, 'model/request')),
+      at(3, 'codex/audit-v1', fact(2, 'model/result')),
+    ]
+    const value = assembler(events.slice(1))
+    expect(snapshot(value).codexAuditFacts?.map(item => item.seq)).toEqual([2, 3])
+    value.replaceWindow(events, false)
+    value.flush()
+    expect(snapshot(value).codexAuditFacts?.map(item => [item.seq, item.fact.kind, item.fact.eventId]))
+      .toEqual([[2, 'model/request', 'fact-1'], [3, 'model/result', 'fact-2']])
+    expect(snapshot(value).eventNodes).toEqual([])
+  })
+
   it('assembles streaming usage, preserves retry facts, and materializes interruption', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),

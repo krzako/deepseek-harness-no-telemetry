@@ -12,19 +12,48 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+function start(controller: SessionLogDownloadController): Promise<void> {
+  void controller.download(SID)
+  return controller.confirm(SID, 'portable')
+}
+
 describe('SessionLogDownloadController', () => {
+  it('requires an open warning and a fresh explicit choice for each download', async () => {
+    const fetcher = vi.fn(async () => new Response('zip'))
+    const save = vi.fn()
+    const controller = new SessionLogDownloadController(fetcher, save)
+    await controller.confirm(SID, 'portable')
+    await controller.download(SID)
+    expect(controller.store.getSnapshot().bySession[SID]?.status).toBe('confirmation')
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(save).not.toHaveBeenCalled()
+    controller.dismiss(SID)
+    await controller.confirm(SID, 'portable')
+    expect(fetcher).not.toHaveBeenCalled()
+    await controller.download(SID)
+    await controller.confirm(SID, 'log')
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(new URL(save.mock.calls[0]?.[0] as string).searchParams.get('format')).toBe('log')
+    await controller.confirm(SID, 'portable')
+    expect(fetcher).toHaveBeenCalledOnce()
+    await controller.download(SID)
+    expect(controller.store.getSnapshot().bySession[SID]?.status).toBe('confirmation')
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
   it('downloads the host ZIP and publishes one shared success state', async () => {
     const fetcher = vi.fn(async () => new Response('zip', { status: 200 }))
     const save = vi.fn()
     const controller = new SessionLogDownloadController(fetcher, save)
 
-    await controller.download(SID)
+    await start(controller)
 
     expect(fetcher).toHaveBeenCalledOnce()
     const [url, init] = fetcher.mock.calls[0] as unknown as [URL, RequestInit]
     expect(url.pathname).toBe('/api/session.export')
     expect(url.searchParams.get('sessionId')).toBe(SID)
     expect(url.searchParams.get('includeDescendants')).toBe('true')
+    expect(url.searchParams.get('format')).toBe('portable')
+    expect(url.searchParams.has('includeWorkspace')).toBe(false)
     expect(init.method).toBe('HEAD')
     expect(init.signal).toBeInstanceOf(AbortSignal)
     expect(save).toHaveBeenCalledWith(
@@ -36,13 +65,24 @@ describe('SessionLogDownloadController', () => {
     })
   })
 
+  it('captures explicit workspace opt-in in both preflight and browser download', async () => {
+    const fetcher = vi.fn(async () => new Response(''))
+    const save = vi.fn()
+    const controller = new SessionLogDownloadController(fetcher, save)
+    await controller.download(SID)
+    await controller.confirm(SID, 'portable', true)
+    const [url] = fetcher.mock.calls[0] as unknown as [URL]
+    expect(url.searchParams.get('includeWorkspace')).toBe('true')
+    expect(save).toHaveBeenCalledWith(url.toString(), sessionLogZipFilename(SID))
+  })
+
   it('collapses concurrent gestures and preserves a dismissed dialog', async () => {
     const response = Promise.withResolvers<Response>()
     const fetcher = vi.fn(() => response.promise)
     const controller = new SessionLogDownloadController(fetcher, vi.fn())
 
-    const first = controller.download(SID)
-    const second = controller.download(SID)
+    const first = start(controller)
+    const second = start(controller)
     expect(first).toBe(second)
     controller.dismiss(SID)
     response.resolve(new Response('zip', { status: 200 }))
@@ -57,7 +97,7 @@ describe('SessionLogDownloadController', () => {
     const http = new SessionLogDownloadController(
       async () => new Response('backend unavailable', { status: 500 }), vi.fn(),
     )
-    await http.download(SID)
+    await start(http)
     expect(http.store.getSnapshot().bySession[SID]).toEqual({
       open: true,
       status: 'error',
@@ -65,7 +105,7 @@ describe('SessionLogDownloadController', () => {
     })
 
     const transport = new SessionLogDownloadController(async () => { throw 'offline' }, vi.fn())
-    await transport.download(SID)
+    await start(transport)
     expect(transport.store.getSnapshot().bySession[SID]?.error).toBe('offline')
 
     transport.dismiss('absent' as SessionId)
@@ -76,7 +116,7 @@ describe('SessionLogDownloadController', () => {
       }) as unknown as Response,
       vi.fn(),
     )
-    await emptyDetail.download(SID)
+    await start(emptyDetail)
     expect(emptyDetail.store.getSnapshot().bySession[SID]?.error).toBe('Export failed: HTTP 503')
   })
 
@@ -89,13 +129,13 @@ describe('SessionLogDownloadController', () => {
       }, { once: true })
     }))
     const controller = new SessionLogDownloadController(fetcher, vi.fn())
-    const pending = controller.download(SID)
+    const pending = start(controller)
 
     await controller.dispose()
 
     await expect(pending).resolves.toBeUndefined()
     expect(signal?.aborted).toBe(true)
-    await expect(controller.download(SID)).resolves.toBeUndefined()
+    await expect(start(controller)).resolves.toBeUndefined()
     await controller.dispose()
   })
 
@@ -106,7 +146,7 @@ describe('SessionLogDownloadController', () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     const controller = new SessionLogDownloadController()
 
-    await controller.download(SID)
+    await start(controller)
 
     expect((fetcher.mock.calls[0]?.[0] as URL).origin).toBe('http://dsh.internal')
     expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ method: 'HEAD' })
@@ -116,7 +156,7 @@ describe('SessionLogDownloadController', () => {
   it('defaults dialog openness when state is externally cleared before settlement', async () => {
     const success = Promise.withResolvers<Response>()
     const successful = new SessionLogDownloadController(() => success.promise, vi.fn())
-    const successRun = successful.download(SID)
+    const successRun = start(successful)
     successful.store.set({ bySession: {} })
     success.resolve(new Response('zip'))
     await successRun
@@ -124,7 +164,7 @@ describe('SessionLogDownloadController', () => {
 
     const failure = Promise.withResolvers<Response>()
     const failing = new SessionLogDownloadController(() => failure.promise, vi.fn())
-    const failureRun = failing.download(SID)
+    const failureRun = start(failing)
     failing.store.set({ bySession: {} })
     failure.reject(new Error('failed after clear'))
     await failureRun

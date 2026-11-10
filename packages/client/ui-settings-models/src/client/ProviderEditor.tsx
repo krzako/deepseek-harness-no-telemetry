@@ -3,14 +3,12 @@
  * field is a single write-only **API key** input (the page never asks for an
  * environment-variable name — a typed key stores through `credentials/set`
  * under the profile's reference, deriving `<ROUTE>_API_KEY` when the profile
- * has none. The pi-ai profile records that derivation as `apiKeyEnv` only when
+ * has none. Pi-ai and Codex profiles record that derivation as `apiKeyEnv` only when
  * a key is entered; a blank key materializes a reference-free profile for
  * provider-native authentication);
  * the collapsed 自定义设置 area carries the per-family extras (`baseURL` for
- * both families, DeepSeek's id/name/context-window model catalog, and the
- * display name and wire protocol of a pi-ai route the adapter does not ship —
- * the two fields the create card asked that route for, editable here for the
- * same reason).
+ * all families, each model catalog, the display name and wire protocol of a
+ * hand-declared pi-ai route, and the display name and API format of Codex).
  * Reasoning effort is deliberately absent: it is a per-MODEL capability, and
  * the models under one provider disagree about it, so a provider-scoped
  * control can only be set to a value some of them reject. The composer's
@@ -40,7 +38,7 @@ import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
-type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
+type EditorLayout = 'deepseek' | 'pi-ai' | 'codex' | 'unknown'
 
 /** The public DeepSeek endpoint shown as the deepseek base-URL placeholder. */
 const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
@@ -133,6 +131,7 @@ export function pathOps(
 function layoutOf(ns: string): EditorLayout {
   if (ns === 'llm-deepseek') return 'deepseek'
   if (ns === 'llm-pi-ai') return 'pi-ai'
+  if (ns === 'codex') return 'codex'
   return 'unknown'
 }
 
@@ -248,7 +247,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     const ns = namespace.ns
     // A pi-ai profile names the conventional reference only when this page is
     // about to store a key. Otherwise the provider keeps its native auth path.
-    const next = layout === 'pi-ai' && stringAt(draft, 'apiKeyEnv') === undefined
+    const next = (layout === 'pi-ai' || layout === 'codex') && stringAt(draft, 'apiKeyEnv') === undefined
       && stringAt(fallback, 'apiKeyEnv') === undefined && keyValue.length > 0
       ? schema.setPath(draft, ['apiKeyEnv'], keyRef)
       : draft
@@ -332,11 +331,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    * narrowed so the per-family branches below are total: an unknown namespace
    * renders the hint instead and never reaches this body.
    */
-  const curatedFields = (family: 'deepseek' | 'pi-ai'): ReactNode => {
+  const curatedFields = (family: 'deepseek' | 'pi-ai' | 'codex'): ReactNode => {
     // What a hand-declared route names for itself and nothing else can supply.
     // A whole-section `llm-deepseek` profile is a composition fact with no
     // per-route identity for its schema to carry, hence the family test.
-    const ownsIdentity = family === 'pi-ai' && props.declared === true
+    const ownsIdentity = family === 'codex' || (family === 'pi-ai' && props.declared === true)
     const customModels = schema.getPath(draft, ['models'])
     const modelsOverridden = schema.hasPath(draft, ['models'])
     const models = modelDrafts(modelsOverridden ? customModels : inheritedModels())
@@ -346,7 +345,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       ? t('keyEnvLocked')
       : keyState?.configured === true && props.credentialRequired !== true
         ? t('keyStored')
-        : family === 'pi-ai' ? t('keyPlaceholderNative') : t('keyPlaceholder')
+        : family === 'pi-ai' || family === 'codex' ? t('keyPlaceholderNative') : t('keyPlaceholder')
     /** What both family editors take: the rows, whose layer owns them, and the two writes. */
     const catalogProps = {
       models,
@@ -383,6 +382,24 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
             {/* The name and the protocol are the create card's two remaining
                 profile fields; a route the adapter ships defaults both from
                 its catalog entry and neither belongs on its card. */}
+            {family === 'codex' ? (
+              <div className={styles['field']}>
+                <span className={styles['fieldLabel']}>{t('codexApiFormat')}</span>
+                <select
+                  className={`${styles['input']} ${styles['selectInput']}`}
+                  value={stringAt(draft, 'apiFormat') ?? 'chat-completions'}
+                  aria-label={t('codexApiFormat')}
+                  disabled={disabled}
+                  onChange={(event) => {
+                    setField('apiFormat', event.target.value === 'chat-completions'
+                      ? undefined : event.target.value)
+                  }}
+                >
+                  <option value="chat-completions">{t('codexChatCompletions')}</option>
+                  <option value="responses">{t('codexResponses')}</option>
+                </select>
+              </div>
+            ) : null}
             {ownsIdentity
               ? (
                 <div className={styles['field']}>
@@ -425,7 +442,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
             </div>
             {/* The protocol sits beside the endpoint it describes, as it does
                 on the create card. */}
-            {ownsIdentity
+            {ownsIdentity && family === 'pi-ai'
               ? (
                 <div className={styles['field']}>
                   <span className={styles['fieldLabel']}>{t('customApi')}</span>
@@ -467,6 +484,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                   probe={probe}
                   probeBlocked={keyFailure}
                   operations={operations}
+                  canFetch={family !== 'codex'}
+                  {...family === 'codex' ? { emptyMessageKey: 'codexModelsEmpty' as const } : {}}
                 />
               )}
           </div>

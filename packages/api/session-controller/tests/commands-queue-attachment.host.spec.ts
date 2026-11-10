@@ -1,6 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import { createHash } from 'node:crypto'
 import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createAssistantMessage, createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
@@ -60,6 +61,66 @@ async function expectFailure(operation: Promise<unknown>, code: string): Promise
 }
 
 describe('Session queue commands', () => {
+  it('streams a verified Codex artifact only for the Session containing its fact and receipt', async () => {
+    const { ctx, controller, agent } = await commandHarness()
+    const bytes = Buffer.from('{"prompt":"private"}')
+    const sha256 = createHash('sha256').update(bytes).digest('hex')
+    const eventId = 'audit-event'
+    const second = ctx.sessions.create(SessionId('other-session'), { meta: { cwd: '/workspace' } })
+    const append = agent.session.append.bind(agent.session) as (type: string, data: unknown) => void
+    append('codex/artifact-v1', {
+      version: 1, threadId: 'thread-1', sha256, bytes: bytes.length,
+      mediaType: 'application/json', name: `dsh-audit-${sha256}.blob`,
+    })
+    append('codex/audit-v1', {
+      version: 1, sequence: 1, eventId, time: 1, threadId: 'thread-1', turn: 1,
+      kind: 'model/request', attemptId: 'attempt-1', purpose: 'inference',
+      stage: 'model-visible', apiFormat: 'responses',
+      request: { kind: 'artifact', sha256, bytes: bytes.length, mediaType: 'application/json' },
+    })
+    const readFileStream = vi.fn(async function* () { yield bytes })
+    ctx.provide('attachments', { readFileStream } as never)
+    const request = { sessionId: agent.session.id, eventId, sha256 }
+    const collect = async (target: typeof request) => {
+      const chunks = []
+      for await (const chunk of controller.auditArtifact(target, new AbortController().signal)) chunks.push(chunk.data)
+      return chunks.map(chunk => Buffer.from(chunk, 'base64').toString()).join('')
+    }
+    await expect(collect(request)).resolves.toBe(bytes.toString())
+    await expect(collect({ ...request, sessionId: second.id })).rejects.toMatchObject({
+      code: 'session/attachment-invalid', details: { reason: 'ATTACHMENT_NOT_REFERENCED' },
+    })
+    await expect(collect({ ...request, eventId: 'other-event' })).rejects.toMatchObject({
+      code: 'session/attachment-invalid', details: { reason: 'ATTACHMENT_NOT_REFERENCED' },
+    })
+    expect(readFileStream).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects an audit artifact whose stored bytes differ from its receipt', async () => {
+    const { ctx, controller, agent } = await commandHarness()
+    const sha256 = createHash('sha256').update('expected').digest('hex')
+    const append = agent.session.append.bind(agent.session) as (type: string, data: unknown) => void
+    append('codex/artifact-v1', {
+      version: 1, threadId: 'thread-1', sha256, bytes: 8,
+      mediaType: 'application/json', name: `dsh-audit-${sha256}.blob`,
+    })
+    append('codex/audit-v1', {
+      version: 1, sequence: 1, eventId: 'event-1', time: 1, threadId: 'thread-1', turn: 1,
+      kind: 'model/result', attemptId: 'attempt-1', purpose: 'inference', stage: 'codex',
+      result: { kind: 'artifact', sha256, bytes: 8, mediaType: 'application/json' },
+    })
+    ctx.provide('attachments', { async *readFileStream() { yield Buffer.from('tampered') } } as never)
+    const collect = async () => {
+      for await (const _chunk of controller.auditArtifact(
+        { sessionId: agent.session.id, eventId: 'event-1', sha256 }, new AbortController().signal,
+      )) { /* consume through verification */ }
+    }
+    await expect(collect()).rejects.toMatchObject({
+      code: 'session/attachment-invalid', details: { reason: 'ATTACHMENT_UNREADABLE' },
+    })
+    await ctx.fiber.dispose()
+  })
   it('edits, removes, steers, and rejects stale queue occurrences', async () => {
     const { ctx, controller, agent, inbox, steer, cancel } = await commandHarness()
     const queued = createUserMessage({ content: [{ type: 'text', text: 'queued' }], source: { kind: 'user' } })

@@ -35,6 +35,7 @@ import type {
   Models,
   ModelThinkingLevel,
   MutableModels,
+  FetchFunction,
   SimpleStreamOptions,
   ThinkingLevel,
 } from '@earendil-works/pi-ai'
@@ -49,6 +50,7 @@ import type {
   GenerateOptions,
   ImageAttachmentAccess,
   LlmModelInfo,
+  LlmAuthenticationInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
   PreparedAdapterCall,
@@ -72,6 +74,8 @@ interface PiAiSnapshot {
 
 /** Constructor options for {@link PiAiAdapter}: the two resolution hooks the plugin owns. */
 export interface PiAiAdapterOptions {
+  /** Read local authentication metadata for the captured connection without resolving its secret. */
+  describeAuthentication?: (profile: ResolvedPiAiProviderProfile) => Promise<LlmAuthenticationInfo>
   /** Current validated profiles by provider route; called once per operation. */
   profiles: () => ReadonlyMap<string, ResolvedPiAiProviderProfile>
   /**
@@ -219,6 +223,10 @@ function requestHeaders(headers: Readonly<Record<string, string>> | undefined): 
 export class PiAiAdapter extends LlmAdapter {
   private snapshot: PiAiSnapshot | undefined
 
+  override describeAuthentication(provider: string, _model: string): Promise<LlmAuthenticationInfo> {
+    return this.config.describeAuthentication?.(this.profileOf(this.current(), provider)) ?? Promise.resolve({ status: 'unverified' })
+  }
+
   constructor(private readonly config: PiAiAdapterOptions) {
     super()
   }
@@ -322,9 +330,19 @@ export class PiAiAdapter extends LlmAdapter {
     return this.streamWithSnapshot(options, this.current())
   }
 
+  /** Use one request-scoped HTTP transport without changing the configured provider snapshot.
+   * @param options - assembled model request.
+   * @param requestFetch - transport invoked with pi-ai's actual upstream Request.
+   * @returns the ordinary provider stream; unsupported transports reject the override.
+   */
+  streamWithFetch(options: GenerateOptions, requestFetch: FetchFunction): AsyncIterable<StreamChunk> {
+    return this.streamWithSnapshot(options, this.current(), requestFetch)
+  }
+
   private async * streamWithSnapshot(
     options: GenerateOptions,
     snapshot: PiAiSnapshot,
+    requestFetch?: FetchFunction,
   ): AsyncIterable<StreamChunk> {
     if (options.stop !== undefined) {
       throw new LlmError('llm-pi-ai does not support GenerateOptions.stop', 'UNSUPPORTED_OPTION')
@@ -374,6 +392,7 @@ export class PiAiAdapter extends LlmAdapter {
         }, onReplayDegrade)
       const events = snapshot.models.streamSimple(model, context, {
         ...profileOptions(profile, reasoning, apiKey),
+        ...requestFetch === undefined ? {} : { fetch: requestFetch },
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },

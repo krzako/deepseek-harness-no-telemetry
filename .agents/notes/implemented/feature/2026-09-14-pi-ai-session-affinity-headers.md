@@ -2,8 +2,6 @@
 
 Status: implemented
 
-English | [中文](2026-09-14-pi-ai-session-affinity-headers.zh.md)
-
 ## Problem
 
 A private OpenAI-compatible gateway needs a stable per-conversation identifier on the wire — copilot-proxy keys its conversation records on one — and the harness already owns the right value: the loop stamps every model request with the durable session id at `GenerateOptions.sessionId`, and `dsh-llm-pi-ai` forwards it to pi-ai. pi-ai's `openai-completions` implementation turns that id into session-affinity transport headers whenever a model's compat carries `sendSessionAffinityHeaders`, but DSH's compat gate classified `sendSessionAffinityHeaders` and `sessionAffinityFormat` as `withhold`, so no settings surface could enable them. The id pi-ai already received was dropped on the floor, and requests reached the gateway with no session identity; the gateway's own records could not tell one harness conversation from another.

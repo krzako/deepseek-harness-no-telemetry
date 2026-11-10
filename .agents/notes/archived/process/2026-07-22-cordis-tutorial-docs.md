@@ -3,8 +3,6 @@
 Status: implemented
 Archived: 2026-07-27
 
-English | [中文](2026-07-22-cordis-tutorial-docs.zh.md)
-
 ## Problem
 
 The repo documents Cordis at two levels: the condensed [cordis-primer](../../../../docs/cordis-primer.md) states the concepts, and the `docs/user/develop/` pages teach harness plugin authoring against harness services. Neither serves a developer meeting Cordis itself for the first time: the primer assumes the reader already writes plugins, and the develop pages jump straight to `defineTool` without showing how contexts, fibers, services, and dispatch actually behave. There was no path where a reader runs bare Cordis, watches a fiber go PENDING, or sees a waterfall veto happen.

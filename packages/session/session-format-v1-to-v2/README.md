@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-session-format-v1-to-v2
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-session-format-v1-to-v2` converts a complete released-v1 Session into the released-v2 event model. It consumes top-level `assistant/chunk` events, embeds their exact timed stream in the matching `assistant/message`, and records an `assistant/attempt` when a failed, retried, cancelled, or stream-error attempt reached settlement without a surface message. The edge densely remaps surviving events and every declared same-Session sequence reference, while the v2 codec stores one event per row and derives the inherited cut from a tagged `session/end-seed` marker.
@@ -36,7 +34,7 @@ const decodedV1 = releasedV1SessionFormatCodec.decodeArtifact(header, rows)
 const migratedV2 = sessionFormatV1ToV2.migrate(decodedV1)
 ```
 
-`releasedV1SessionFormatCodec` reads the frozen v1 physical language. `sessionFormatV1ToV2` validates that complete source, performs the cardinality-changing transformation, remaps declared references, and validates the exact v2 result. `releasedV2SessionFormatCodec` then encodes or decodes the current physical representation.
+`releasedV1SessionFormatCodec` reads the frozen v1 physical language. `sessionFormatV1ToV2` validates that complete source, performs the cardinality-changing transformation, remaps declared references, and validates the exact v2 result. `releasedV2SessionFormatCodec` encodes or decodes the released-v2 physical representation.
 
 A successful v1 `assistant/message` must cite its complete ordered attempt. The migration removes the cited top-level chunks and obsolete message provenance, compacts the chunks without joining token boundaries, and stores the stream on that message. An unclaimed attempt becomes one log-only `assistant/attempt` at its final chunk position. Unrelated interleaved events keep their relative order.
 

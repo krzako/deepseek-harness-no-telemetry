@@ -40,6 +40,8 @@ Source: [`packages/acp/acp/src/index.ts:75`](../packages/acp/acp/src/index.ts)
 ```ts config-catalog
 /** Composition entry for the default model selection. */
 export interface Config {
+  /** Execution engine for the composition default. */
+  agent?: 'standard' | 'codex'
   /** Registered provider route. */
   provider: string
   /** Provider-owned model id. */
@@ -47,7 +49,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/core/agent-default-model/src/index.ts:41`](../packages/core/agent-default-model/src/index.ts)
+Source: [`packages/core/agent-default-model/src/index.ts:44`](../packages/core/agent-default-model/src/index.ts)
 
 <a id="deepseek-aidsh-agent-instructions"></a>
 
@@ -111,7 +113,7 @@ export interface Config {
 
 Depends on: [`AgentOptions`](subsystems/core.md) · [`SessionId`](subsystems/core.md)
 
-Source: [`packages/core/agent-loop/src/index.ts:318`](../packages/core/agent-loop/src/index.ts)
+Source: [`packages/core/agent-loop/src/index.ts:332`](../packages/core/agent-loop/src/index.ts)
 
 <a id="deepseek-aidsh-agent-presets"></a>
 
@@ -213,7 +215,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/session-controller/src/index.ts:69`](../packages/api/session-controller/src/index.ts)
+Source: [`packages/api/session-controller/src/index.ts:71`](../packages/api/session-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-settings-controller"></a>
 
@@ -1372,7 +1374,7 @@ export interface ReplayModelConfig {
 
 Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/test-support/llm-replay/src/index.ts:1293`](../packages/test-support/llm-replay/src/index.ts)
+Source: [`packages/test-support/llm-replay/src/index.ts:1294`](../packages/test-support/llm-replay/src/index.ts)
 
 <a id="deepseek-aidsh-llm-retry"></a>
 
@@ -1830,13 +1832,25 @@ Requires: `commands` · `connection`
 export interface Config {
   /** DEFLATE level for each ZIP entry. @default 6 */
   readonly compressionLevel?: SessionLogCompressionLevel
+  /** Optional maximum uncompressed bytes in one portable ZIP entry. */
+  readonly maxPortableEntryBytes?: number
+  /** Optional maximum uncompressed bytes across all portable ZIP entries. */
+  readonly maxPortableTotalUncompressedBytes?: number
+  /** Optional maximum compressed bytes accepted by import preview. */
+  readonly maxImportArchiveBytes?: number
+  /** Optional maximum entry count in an uploaded ZIP. */
+  readonly maxImportEntries?: number
+  /** Optional maximum bytes in one decompressed import entry. */
+  readonly maxImportEntryBytes?: number
+  /** Optional maximum bytes across decompressed import entries. */
+  readonly maxImportTotalUncompressedBytes?: number
 }
 
 /** Valid fflate DEFLATE levels accepted by session-log export. */
 export type SessionLogCompressionLevel = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
 ```
 
-Source: [`packages/session-query/session-log-export/src/index.ts:45`](../packages/session-query/session-log-export/src/index.ts)
+Source: [`packages/session-query/session-log-export/src/index.ts:69`](../packages/session-query/session-log-export/src/index.ts)
 
 <a id="deepseek-aidsh-session-persistence-jsonl"></a>
 
@@ -1861,7 +1875,7 @@ export interface Config {
 export type JsonlCompression = 'zstd' | 'none'
 ```
 
-Source: [`packages/session/session-persistence-jsonl/src/index.ts:86`](../packages/session/session-persistence-jsonl/src/index.ts)
+Source: [`packages/session/session-persistence-jsonl/src/index.ts:90`](../packages/session/session-persistence-jsonl/src/index.ts)
 
 <a id="deepseek-aidsh-session-projection-cache"></a>
 
@@ -2367,6 +2381,8 @@ Requires: `subagents` · `subprocess`
 ```ts config-catalog
 /** Deployment-owned model, permission, environment, and process-release settings. */
 export interface Config {
+  /** Absolute path to the Codex binary built from the deployment fork. */
+  binaryPath?: string
   /** Provider name on `ctx.subagents` (default `codex`). */
   providerName?: string
   /** Native Codex model fixed for this instance; omitted to inherit Codex settings. */
@@ -2520,7 +2536,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/core/system-prompt/src/index.ts:237`](../packages/core/system-prompt/src/index.ts)
+Source: [`packages/core/system-prompt/src/index.ts:241`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -3156,7 +3172,7 @@ export interface WebRuntimeConfig {
 }
 ```
 
-Source: [`packages/web/web/src/index.ts:96`](../packages/web/web/src/index.ts)
+Source: [`packages/web/web/src/index.ts:100`](../packages/web/web/src/index.ts)
 
 <a id="deepseek-aidsh-web-app"></a>
 
@@ -3339,6 +3355,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-cordis-client-runner` ([`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts))
 - `@deepseek-ai/dsh-deepseek-llm-api-extensions` ([`packages/llm/deepseek-llm-api-extensions/src/index.ts`](../packages/llm/deepseek-llm-api-extensions/src/index.ts))
 - `@deepseek-ai/dsh-experimental-client-ui-agent-team` ([`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts))
+- `@deepseek-ai/dsh-export-conversation-pdf` — requires `webServer` · `sessionQuery` · `tools` ([`packages/extensions/export-conversation-pdf/index.js`](../packages/extensions/export-conversation-pdf/index.js))
 - `@deepseek-ai/dsh-fs-e2b` — requires `e2b` ([`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts))
 - `@deepseek-ai/dsh-fs-observation-policy` ([`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts))
 - `@deepseek-ai/dsh-goal-round-driver` — requires `agents` · `goals` · `sessions` ([`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts))
@@ -3391,6 +3408,7 @@ Abstract service classes — a deployment loads a concrete implementation packag
 
 Imported as libraries by other packages; a `cordis.yml` cannot load them.
 
+- `@deepseek-ai/dsh-agent-codex` ([`packages/core/agent-codex/src/index.ts`](../packages/core/agent-codex/src/index.ts))
 - `@deepseek-ai/dsh-agent-loop-testkit` ([`packages/test-support/agent-loop-testkit/src/index.ts`](../packages/test-support/agent-loop-testkit/src/index.ts))
 - `@deepseek-ai/dsh-anonymous-user-id` ([`packages/identity/anonymous-user-id/src/index.ts`](../packages/identity/anonymous-user-id/src/index.ts))
 - `@deepseek-ai/dsh-app-boot` ([`packages/boot/app-boot/src/index.ts`](../packages/boot/app-boot/src/index.ts))
@@ -3425,6 +3443,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-session-format-catalog` ([`packages/session/session-format-catalog/src/index.ts`](../packages/session/session-format-catalog/src/index.ts))
 - `@deepseek-ai/dsh-session-format-v0-to-v1` ([`packages/session/session-format-v0-to-v1/src/index.ts`](../packages/session/session-format-v0-to-v1/src/index.ts))
 - `@deepseek-ai/dsh-session-format-v1-to-v2` ([`packages/session/session-format-v1-to-v2/src/index.ts`](../packages/session/session-format-v1-to-v2/src/index.ts))
+- `@deepseek-ai/dsh-session-format-v2-to-v3` ([`packages/session/session-format-v2-to-v3/src/index.ts`](../packages/session/session-format-v2-to-v3/src/index.ts))
 - `@deepseek-ai/dsh-session-snapshot` ([`packages/test-support/session-snapshot/src/index.ts`](../packages/test-support/session-snapshot/src/index.ts))
 - `@deepseek-ai/dsh-session-telemetry` ([`packages/session/session-telemetry/src/index.ts`](../packages/session/session-telemetry/src/index.ts))
 - `@deepseek-ai/dsh-session-title-llm` ([`packages/session/session-title-llm/src/index.ts`](../packages/session/session-title-llm/src/index.ts))

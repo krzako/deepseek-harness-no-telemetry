@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-permission-presets'
 import { SESSION_FORMAT_VERSION, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
@@ -1211,7 +1212,8 @@ describe('loadReplayScript', () => {
     writeFileSync(file, source, 'utf8')
 
     expect(loadReplayScript({ file })).toEqual([{ kind: 'chunks', chunks: TEXT_CHUNKS }])
-    expect(JSON.parse(prepareSessionSnapshotFixtureForComparison(source).split('\n')[0] as string)).toMatchObject({ version: 2 })
+    expect(JSON.parse(prepareSessionSnapshotFixtureForComparison(source).split('\n')[0] as string))
+      .toMatchObject({ version: SESSION_FORMAT_VERSION })
     expect(readFileSync(file, 'utf8')).toBe(source)
   })
 

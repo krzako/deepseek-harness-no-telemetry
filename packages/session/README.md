@@ -5,8 +5,6 @@ kind: "package-group"
 
 # session/ — durable session data plane
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 The session group makes an agent's conversation durable and reusable outside the live loop: the static format chain restores released generations, the persistence seam stores the event log and restores it on resume, the checkpoint policy keeps requests, tool side effects, and completed steps durable before the next action, projections serve whole log-derived values to client carriers, titles name each session from its content, and telemetry reports session activity outbound. Mount the shipped JSONL persistence provider first, then add the checkpoint policy and any projection, title, or telemetry packages the deployment needs. This page maps the group; every package README owns its contract, and `session-query/` is a sibling group whose read/tool surface consumes persistence independently.
@@ -31,6 +29,7 @@ The group splits into four families: durable storage (persistence seam, backends
 | [`session-format/`](session-format/README.md) | Pure adjacent-format chain and artifact validation library | library — no ctx key |
 | [`session-format-v0-to-v1/`](session-format-v0-to-v1/README.md) | Frozen released-v0 decoder and identity migration into released v1 | library — no ctx key |
 | [`session-format-v1-to-v2/`](session-format-v1-to-v2/README.md) | Frozen released-v1 decoder and cardinality-changing Assistant-stream migration into released v2 | library — no ctx key |
+| [`session-format-v2-to-v3/`](session-format-v2-to-v3/README.md) | Frozen released-v2 decoder and import-lineage migration into v3 | library — no ctx key |
 | [`session-format-catalog/`](session-format-catalog/README.md) | Generated static catalog of shipped adjacent migrations | library — no ctx key |
 | [`session-persistence/`](session-persistence/README.md) | Defines the durable session-storage service and the shared write coordination every backend composes | `ctx.sessionPersistence` |
 | [`session-persistence-jsonl/`](session-persistence-jsonl/README.md) | Shipped backend: immutable canonical generation filenames per Session with exclusive successor publication, optionally Zstandard-compressed | registers on `ctx.sessionPersistence` |

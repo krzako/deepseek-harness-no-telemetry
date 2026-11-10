@@ -1,7 +1,5 @@
 # Sessions
 
-English | [中文](session.zh.md)
-
 The in-memory, event-sourced model of [dsh-session](../../packages/core/session). A `Session` is an **append-only log** of typed `SessionEvent`s — the single source of truth for an agent's whole interaction history. The LLM message history is *derived* from the log, never stored separately; replay is re-derivation from the same events. How the log is made **durable** (the persistence seam, backends, crash recovery) is the sibling concern on [persistence.md](persistence.md).
 
 Source: [`packages/core/session/src/types.ts`](../../packages/core/session/src/types.ts)
@@ -584,6 +582,8 @@ Everything else (`turn/*`, `step/*`, `assistant/attempt`, plugin-owned `llm/retr
 
 ## Live-session fork API
 
+An imported Session records `SessionHeader.importLineage` with the source Session id, source driver id, and transfer id. This is not `parentSession`: it does not denote an inherited event prefix, and the header validator rejects combining it with fork lineage. The field remains available after persistence and resume.
+
 `ctx.sessions.create(id, { seed, meta })` is the low-level replay/fork primitive. For ordinary live-session forks, `SessionStore` exposes one policy API:
 
 - `fork(source, boundary?, childSessionId?)` accepts a live `Session` object or live `SessionId`, selects source events through the inclusive `SessionSeq` boundary (default: current last event), requires the selected prefix to end outside an open turn, then creates a live child session with deep-cloned seed events, `parentSession`, `isSeeded: true`, the exact `inheritedEventCount`, and inherited `cwd`.
@@ -671,7 +671,7 @@ The backends that consume this contract are on [persistence.md](persistence.md).
 
 ## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`). Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
 <a id="ctxsessioncontroller--sessioncontroller"></a>
 
@@ -774,6 +774,14 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspectio
  * @returns the durable attachment reference and base64-encoded bytes.
  */
 @Remote('attachment') attachment(request: SessionAttachmentRequest): Promise<SessionAttachmentValue>
+
+/**
+ * Stream an audit artifact only when this Session owns its fact and receipt.
+ * @param request - Session, fact, and digest identifying the payload.
+ * @param signal - caller cancellation for the whole stream.
+ * @returns bytes in order; a missing reference or integrity failure rejects the stream.
+ */
+@Remote({ mode: 'stream' }) auditArtifact(request: SessionAuditArtifactRequest, signal: AbortSignal): AsyncIterable<SessionAuditArtifactChunk>
 
 /**
  * Mutate one still-pending queue occurrence on a live Agent.

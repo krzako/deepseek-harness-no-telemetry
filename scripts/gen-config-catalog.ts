@@ -59,7 +59,7 @@ export interface CatalogEntry {
   pkg: string
   /** Repo-relative package dir, e.g. `packages/core/agent-loop`. */
   dir: string
-  /** Repo-relative entry file, `<dir>/src/index.ts`. */
+  /** Repo-relative TypeScript source entry or an existing JS-only package main. */
   entry: string
   kind: Kind
   /** Service keys the plugin `inject`s (empty when none declared). */
@@ -582,10 +582,15 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
   // Pre-pass: package name → dir, so schema-path lookups can follow
   // workspace-package imports while individual packages are still being walked.
   const pkgDirByName = new Map<string, string>()
-  const manifests: { dir: string; pkg: string }[] = []
+  const manifests: { dir: string; pkg: string; main?: string }[] = []
   for (const manifestRel of globSync('packages/*/*/package.json', { cwd: scanRoot }).map(path => path.split(sep).join('/')).sort()) {
     const dir = manifestRel.slice(0, -'/package.json'.length)
-    const manifest = JSON.parse(readFileSync(resolve(scanRoot, manifestRel), 'utf8')) as { name?: string; os?: string[]; cpu?: string[] }
+    const manifest = JSON.parse(readFileSync(resolve(scanRoot, manifestRel), 'utf8')) as {
+      name?: string
+      os?: string[]
+      cpu?: string[]
+      main?: string
+    }
     const pkg = manifest.name
     if (!pkg) {
       violations.push(`${manifestRel} has no "name".`)
@@ -597,20 +602,28 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
       continue
     }
     pkgDirByName.set(pkg, dir)
-    manifests.push({ dir, pkg })
+    manifests.push({ dir, pkg, ...manifest.main === undefined ? {} : { main: manifest.main } })
   }
   const world: World = { scanRoot, cache, pkgDirByName }
 
-  for (const { dir, pkg } of manifests) {
-    const entryRel = `${dir}/src/index.ts`
+  for (const { dir, pkg, main } of manifests) {
+    let entryRel = `${dir}/src/index.ts`
     let ctx: FileCtx
     try {
       ctx = loadFile(resolve(scanRoot, entryRel), entryRel, cache)
     } catch {
-      // A package without src/index.ts cannot be classified — that is the
-      // violation itself; nothing else in this loop body can run without it.
-      violations.push(`${pkg}: entry ${entryRel} is missing or unreadable.`)
-      continue
+      const jsMain = main?.replace(/^\.\//u, '')
+      if (jsMain === undefined || !/^(?:[\w-]+\/)*[\w.-]+\.m?js$/u.test(jsMain)) {
+        violations.push(`${pkg}: entry ${entryRel} is missing or unreadable.`)
+        continue
+      }
+      entryRel = `${dir}/${jsMain}`
+      try {
+        ctx = loadFile(resolve(scanRoot, entryRel), entryRel, cache)
+      } catch {
+        violations.push(`${pkg}: entry ${entryRel} is missing or unreadable.`)
+        continue
+      }
     }
 
     // Classify, mirroring the Loader's unwrapExports: the default export IS

@@ -23,6 +23,7 @@ import {
   normalizeSessionFormatProvenance,
   normalizeSessionLog,
   normalizeSessionSnapshots,
+  projectPreDriverSelectionSnapshot,
   normalizeStdout,
   normalizedHeaders,
   normalizedSystemPrompts,
@@ -807,7 +808,11 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       const expectedContext = contextOfContents(expectedContents)
       const actualSnapshots = normalizeSessionSnapshots(ordered.map(log => log.content), actualContext)
       const expectedSnapshots = normalizeSessionSnapshots(expectedContents, expectedContext)
-      expect(actualSnapshots.map(records), `${scenario.name}: sessions`).toEqual(expectedSnapshots.map(records))
+      const comparableActual = scenario.manifest.sessionFormat !== undefined
+        && scenario.manifest.sessionFormat.version < 2
+        ? actualSnapshots.map(projectPreDriverSelectionSnapshot)
+        : actualSnapshots
+      expect(comparableActual.map(records), `${scenario.name}: sessions`).toEqual(expectedSnapshots.map(records))
       await verifyHeaders(scenario, ordered, actualContext, assertions.dshSdkChild?.agentConfig)
 
       // Genuine SDK protocol cases retain their secondary wire projections.

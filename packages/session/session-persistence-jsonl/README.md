@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-session-persistence-jsonl
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-session-persistence-jsonl` stores each session in a current append-only JSONL log and retains immutable historical format generations — checksummed Zstandard frames by default, raw newline-delimited lines when compression is disabled. It serves the current logical `SessionEvent` stream through persistence handles, so format migration, compression, historical decoding, and crash recovery remain storage-internal details. Choose it when consumers need a per-session file on disk; the logs are readable as plain lines when `compression: 'none'` is selected. A root directory is the one required configuration; durability, lazy materialization, released-v0/v1 migration, and torn-tail crash recovery come with the backend.
@@ -53,7 +51,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### On-disk layout
 
-Each session gets a session-owned directory under a readable project directory. Every canonical generation starts with a physical header whose version equals its filename. Current v2 stores one physical row per durable event; the frozen v0 and v1 readers also understand their historical packed Assistant-delta rows. V2 stores `isSeeded` in the header and derives the inherited cut from the last tagged `session/end-seed` marker, while historical codecs translate their numeric `seedLength`. The format catalog completes that translation before a handle exposes current logical values. Current storage records use the lossless provenance representation described below:
+Each session gets a session-owned directory under a readable project directory. Every canonical generation starts with a physical header whose version equals its filename. Current v3 stores one physical row per durable event and optional `importLineage` in the header; the frozen v0 and v1 readers also understand their historical packed Assistant-delta rows. The current header stores `isSeeded` and derives the inherited cut from the last tagged `session/end-seed` marker, while historical codecs translate their numeric `seedLength`. The format catalog completes that translation before a handle exposes current logical values. Current storage records use the lossless provenance representation described below:
 
 ```text
 <root>/
@@ -62,9 +60,11 @@ Each session gets a session-owned directory under a readable project directory. 
       session.jsonl.zstd         # released v0, compressed root
       session.v1.jsonl.zstd      # released v1, compressed root
       session.v2.jsonl.zstd      # released v2, compressed root
+      session.v3.jsonl.zstd      # current v3, compressed root
       session.jsonl              # released v0, raw root
       session.v1.jsonl           # released v1, raw root
-      session.v2.jsonl           # released v2, raw root; later versions use vN
+      session.v2.jsonl           # released v2, raw root
+      session.v3.jsonl           # current v3, raw root; later versions use vN
 ```
 
 Session ids are injectively escaped to one safe path segment before use (no traversal, no collision). The normalized cwd keeps the project directory readable for navigation; cwd strings that normalize alike share a project directory while session ids still select distinct session directories. Runtime operations select the numerically highest canonical generation, and format-refusal diagnostics name that absolute path so an operator can find the raw log a build refused to interpret.
@@ -93,7 +93,7 @@ The backend owns its complete storage runtime (`src/storage.ts`): `JsonlSessionH
 
 ### Physical encoding
 
-The default artifact is a standard concatenation of independent [Zstandard frames](../../../.agents/notes/implemented/architecture/2026-07-19-zstandard-jsonl-session-logs.md): one checksummed frame containing only the header line, then one checksummed frame per durable append batch, using Node's built-in Zstandard API at its default compression level (no level knob). Current v2 writes one event per row; `sourceEventSeqs` uses a lossless storage representation in which consecutive runs of at least three sequence numbers become `[start, end]` pairs, any other list stays verbatim, and reading expands the exact in-memory array. Listing reads and validates only the header frame. `compression: 'none'` keeps the same storage-form logical lines without frame compression. A root belongs to one encoding: startup discovery and targeted lookup reject generations with the other suffix; format migration preserves the configured encoding, while compression conversion, mixed-root fallback, and dual write remain unsupported. Frozen v0 and v1 codecs retain their packed-row decoders solely for historical generations.
+The default artifact is a standard concatenation of independent [Zstandard frames](../../../.agents/notes/implemented/architecture/2026-07-19-zstandard-jsonl-session-logs.md): one checksummed frame containing only the header line, then one checksummed frame per durable append batch, using Node's built-in Zstandard API at its default compression level (no level knob). Current v3 writes one event per row; `sourceEventSeqs` uses a lossless storage representation in which consecutive runs of at least three sequence numbers become `[start, end]` pairs, any other list stays verbatim, and reading expands the exact in-memory array. Listing reads and validates only the header frame. `compression: 'none'` keeps the same storage-form logical lines without frame compression. A root belongs to one encoding: startup discovery and targeted lookup reject generations with the other suffix; format migration preserves the configured encoding, while compression conversion, mixed-root fallback, and dual write remain unsupported. Frozen v0 and v1 codecs retain their packed-row decoders solely for historical generations.
 
 ### Source map
 
@@ -148,7 +148,7 @@ JSONL storage does not mutate live request prefixes. A resumed loop can reuse pr
 
 These limits define when this backend is a poor fit or needs special operational care. They are current package constraints, not a task backlog.
 
-- **Format migration preserves the configured encoding and supports only the catalogued chain** — this build migrates released v0 or v1 to current v2; changing compression requires a separate root, and retained predecessors do not provide automatic fallback or downgrade support.
+- **Format migration preserves the configured encoding and supports only the catalogued chain** — this build migrates released v0, v1, or v2 to current v3; changing compression requires a separate root, and retained predecessors do not provide automatic fallback or downgrade support.
 - **The flat-file storage layout does not load** — use a separate root or move pre-release artifacts into the project/session directory layout before loading.
 - **Compressed files are not directly line-readable** — use the backend to load them, or select `compression: 'none'` before writing a fresh root when external line readers are required.
 - **Nothing deletes session files** — logs accumulate under `root` until removed externally; the seam has no deletion API.
@@ -164,3 +164,7 @@ These limits define when this backend is a poor fit or needs special operational
 None.
 
 </details>
+
+Transactional imports use `SessionPersistence.beginImport`: the write handle flushes durably while normal list/stat/open remain fenced. Unsupported providers reject before creating a Session. JSONL reserves a fresh identity under its kernel write lease and persists a pending visibility marker before log bytes; publication durably changes the marker, invokes the synchronous registry callback, and restores the fence if that callback fails. Only this fresh, uncommitted import may be rolled back; published imports and pre-existing generations cannot be removed by rollback. The Agent factory starts the driver with durable seed data before publication, disposes it on failure, and reports cleanup errors instead of swallowing them. An interrupted process leaves a hidden, reserved pending import, never an automatically resumed Session; automatic recovery or deletion is forbidden. Normal rollback removes the uncommitted log and markers but retains the stable POSIX lock inode. Windows namespace changes use the existing write-through move primitive.
+
+`inspectPendingImports()` inventories hidden imports without acquiring ownership or modifying bytes. Reports include streamed SHA-256 receipts, an opaque revision, and `outcome: unknown`; they may describe a live writer and do not prove that it has exited. `recoverPendingImport(report, action)` must acquire the existing kernel lease and reproduce the revision. A live owner, stale report, ambiguous identity, cancellation or non-regular artifact prevents cleanup. `retain` leaves all data hidden and the ID reserved; inspect the audit separately and repeat the archive import into a new ID after resolving any uncertain external effects. `discard-empty` is permitted only for the exact pending marker plus the optional lock file. Any log, partial audit or other artifact forbids deletion. Cleanup preserves the lock inode and never resumes a Session, publishes history or replays tools. These are host maintenance methods on the JSONL provider, not authenticated HTTP endpoints; callers must already have authority over its storage root.

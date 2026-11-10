@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-system-prompt
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-system-prompt` assembles the system prompt and tool schemas the model receives before each step. Plugins contribute ordered prompt sections, dynamic runtime context, tool-schema providers, and named variables; the loop calls `assemble()` once per step and renders the result into the complete model prompt. The package provides the fixed harness identity and the global deployment persona, while an agent-scoped contribution shadows the global default for one agent. Config controls the harness identity opener, dynamic runtime context, the deployment persona, and an explicit model-facing tool order. Choose it when you need to add a prompt section, a prompt variable, or a tool-schema source — it is the assembly point all model-facing prose flows through.
@@ -51,7 +49,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Contribute a prompt section
 
-Sections carry static or context-resolved text with an `order`; they are concatenated in ascending order and equal orders use code-unit name order. Repository-owned contributors resolve centrally allocated positions through `ctx.systemPrompt.getSectionOrder(name)`; runtime-context contributors use `getContextOrder(name)`. External contributions may use any finite order. A `complete: true` section becomes the exact complete prompt after assembly; more than one effective complete section makes assembly fail.
+Sections carry static or context-resolved text with an `order`; they are concatenated in ascending order and equal orders use code-unit name order. Repository-owned contributors resolve centrally allocated positions through `ctx.systemPrompt.getSectionOrder(name)`; runtime-context contributors use `getContextOrder(name)`. External contributions may use any finite order. Set `literal: true` for text that must retain `{{...}}` verbatim. A `complete: true` section becomes the exact complete prompt after assembly; more than one effective complete section makes assembly fail.
 
 ```text
 ctx.systemPrompt.section({
@@ -100,7 +98,7 @@ The package is a registry plus a cooperative assembly pipeline. One `assemble()`
 
 ### Assembly and rendering
 
-Assembly resolves and renders in two stages: `assemble()` returns sections with resolved-but-uninterpolated text, the ordered tool schemas, and every registered variable resolved against the context, while `renderPrompt()` interpolates `{{variable}}` references, drops empty sections, and joins with blank lines — strictly, an unknown reference, a registered-but-valueless reference, or a malformed complete group throws, because a malformed prompt is worse than a loud failure. `toolOrder` canonicalizes the collected tools before the waterfall (registration order is a plugin-load artifact); a waterfall listener that mutates the list owns the determinism of what it emits.
+Assembly resolves and renders in two stages: `assemble()` returns sections with resolved-but-uninterpolated text, the ordered tool schemas, and every registered variable resolved against the context, while `renderPrompt()` interpolates `{{variable}}` references in ordinary sections, leaves literal sections unchanged, drops empty sections, and joins with blank lines. In an ordinary section, an unknown reference, a registered-but-valueless reference, or a malformed complete group throws. `toolOrder` canonicalizes the collected tools before the waterfall (registration order is a plugin-load artifact); a waterfall listener that mutates the list owns the determinism of what it emits.
 
 ### Scoping
 
@@ -169,7 +167,7 @@ Prefix-stable while the visible schema set, rendering, and order are unchanged. 
 These limits define when prompt assembly needs special care. They are current package constraints, not a task backlog.
 
 - **Deployment-authored prompt text is config/composition only** — this plugin owns the global persona default, creator plugins may register agent-scoped shadows, and other sections come from the plugin that owns the fact; there is no end-user prompt-editing API.
-- **No escape syntax for literal `{{…}}` braces** — every complete group is interpolated against registered variables; an escape is deferred until a real prompt needs one.
+- **No inline escape syntax for `{{…}}` braces** — use a separate `literal: true` section when the entire contribution must remain verbatim; ordinary sections interpolate complete groups against registered variables.
 - **`toolOrder` misconfiguration surfaces at prompt assembly (the first turn), not at boot** — only shape violations throw at config load.
 
 

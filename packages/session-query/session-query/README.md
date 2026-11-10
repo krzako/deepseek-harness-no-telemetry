@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-session-query
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-session-query` gives code callers one service for retrieving session history: read a complete raw log, list and filter sessions, fold titles, read events with bounded context, trace session lineage and event relationships, and run full-text search. Live sessions take precedence over persisted ones, and every returned record is a detached clone, so results always describe one consistent moment. Exact reads, filters, and traces are built in; full-text search comes from a mounted backend such as `dsh-session-query-sqlite`. Use it directly from code when you need programmatic access to what the model saw. Setup and usage come first; the implementation internals live in a collapsible developer section below.

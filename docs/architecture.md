@@ -1,7 +1,5 @@
 # DeepSeek Harness Architecture
 
-English | [中文](architecture.zh.md)
-
 Read this before changing anything under `packages/`. It assumes you know Cordis; if you do not, start with the [primer](cordis-primer.md) or the [tutorial](cordis-tutorial/index.md).
 
 We recommend using an agent to explore the codebase and understand its architecture.
@@ -105,6 +103,20 @@ Details: the [sequence diagram](agent-lifecycle.md), the [tool pipeline](tool-ex
 ## Session log
 
 The session log is the source of the context the model sees. `deriveMessages()` projects model history from it. Each `assistant/message` embeds the exact compact timed stream that produced its assembled content; `assistant/attempt` retains settled failed, retried, cancelled, and stream-error attempts without adding model history. Fork, resume, transcripts, telemetry, and persistence all derive from these durable settlements, while live UI incrementality comes from `agent/assistant-stream`; a hard process loss before settlement leaves no durable attempt stream ([decision](../.agents/notes/implemented/architecture/2026-09-01-v2-embedded-assistant-streams.md)).
+
+The agent lifecycle records `agent/driver-selected` separately from model provider and model name. On resume it keeps the recorded driver even if current settings would select another one; a missing driver fails the resume. With persistence mounted, the selection is flushed before the chosen runtime starts ([decision](../.agents/notes/implemented/architecture/2026-09-27-durable-agent-driver-selection.md)).
+
+Driver routing distinguishes fresh creation, persisted resume, and import into an explicitly chosen agent. The factory accepts an explicit import route with durable import ancestry, verifies it against the seed's recorded driver, and does not use the fresh-creation policy for that Session. Portable transfer validates the shared DSH context and reports destination compatibility before calling that destination's import port; it does not publish the new Session ([decision](../.agents/notes/implemented/architecture/2026-09-28-driver-neutral-session-transfer.md)).
+
+The agent registry keeps paired portable export and import ports under each driver's stable identity, independent of model provider names. A full-driver factory or selector cannot register until both ports are present. A caller's effect owns each registration; missing or mismatched ports fail transfer lookup.
+
+The standard loop registers its transfer pair with that registry. It reads the current LLM model catalog for preview and commit, and delegates authentication inspection to that model service; a transfer supplies resolved attachment references per import, so one registered target port does not retain another archive's attachments.
+
+Its source port flushes a live Session before reading the durable log, and can reconstruct a detached completed Session through a read-only persistence handle after the live agent has closed. Export projects that snapshot without resuming a driver or replaying work.
+
+For a standard-source import into the standard loop, the destination creates a new Session from prepared history and restores the source system instruction as a scoped literal section, including after resume. The historical events are replayed as data, never as model or tool work.
+
+Agent creation observes a started asynchronous operation's rejection even if owner teardown has already aborted setup. The abort remains the creation failure, while the abandoned operation cannot leak an unhandled rejection.
 
 Session consumers know only the current logical format. Header-only `stat` and `list` rescan each Session directory, select its numerically highest canonical generation, and translate a supported historical header without loading events or publishing a successor. A stored-session `open` selects that same generation, refuses a future version, or composes the static adjacent migration chain in memory, validates the final result, and exclusively publishes only that version-named successor beside the unchanged source before returning a handle; semantic interrupted-turn repair remains a handle consumer responsibility. JSONL v0 uses `session.jsonl[.zstd]`, v1 and later use lowercase `session.vN.jsonl[.zstd]`, and committed generation paths are never renamed, replaced, or deleted. The JSONL provider owns physical framing, compression, generation selection, and exclusive publication, while each adjacent migration package owns exactly one `vN -> vN+1` step ([decision](../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md)).
 

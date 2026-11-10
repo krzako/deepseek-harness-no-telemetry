@@ -118,6 +118,23 @@ function validateSessionHeader(id: SessionId, input: unknown): SessionHeader {
   if (record.parentSession !== undefined && typeof record.parentSession !== 'string') {
     throw new Error('session header parentSession must be a string')
   }
+  if (record.importLineage !== undefined) {
+    const lineage = record.importLineage
+    if (lineage === null || typeof lineage !== 'object' || Array.isArray(lineage)) {
+      throw new Error('session header importLineage must be a record')
+    }
+    const fields = lineage as Record<string, unknown>
+    if (Object.keys(fields).length !== 3
+      || typeof fields.sourceSessionId !== 'string' || fields.sourceSessionId.length === 0
+      || typeof fields.sourceDriverId !== 'string' || fields.sourceDriverId.length === 0
+      || typeof fields.importId !== 'string' || fields.importId.length === 0) {
+      throw new Error('session header importLineage must contain sourceSessionId, sourceDriverId and importId')
+    }
+    if (fields.sourceSessionId === id) throw new Error('session import source must differ from destination')
+    if (record.parentSession !== undefined || record.isSeeded === true) {
+      throw new Error('session import lineage cannot be combined with fork lineage')
+    }
+  }
   if (typeof record.isSeeded !== 'boolean') {
     throw new Error('session header isSeeded must be a boolean')
   }
@@ -599,10 +616,13 @@ export class Session {
     this.inheritedEventCount = inheritedEventCount
     // A fresh seeded child always owns one tagged marker at its inherited cut,
     // even when the copied prefix already ends in an ancestor marker. Restore
-    // retains that durable marker and appends only the ordinary resume marker.
+    // retains that durable marker. A restored log may already have live events
+    // after it; their presence must not turn every reopen into a new seed cut.
     if (seed !== undefined && mode === 'snapshot' && this.header.isSeeded) {
       this.append('session/end-seed', { inherited: true })
-    } else if (seed !== undefined && this.log.at(-1)?.type !== 'session/end-seed') {
+    } else if (seed !== undefined && (mode === 'restore'
+      ? !this.log.some(event => event.type === 'session/end-seed')
+      : this.log.at(-1)?.type !== 'session/end-seed')) {
       this.append('session/end-seed', {})
     }
   }
@@ -975,6 +995,7 @@ export class SessionStore extends Service {
       createdAt: meta?.createdAt ?? Date.now(),
       ...meta?.cwd === undefined ? {} : { cwd: meta.cwd },
       ...meta?.parentSession === undefined ? {} : { parentSession: meta.parentSession },
+      ...meta?.importLineage === undefined ? {} : { importLineage: meta.importLineage },
       isSeeded: meta?.isSeeded ?? false,
       ...meta?.origin === undefined ? {} : { origin: meta.origin },
       ...meta?.delegationDepth === undefined ? {} : { delegationDepth: meta.delegationDepth },

@@ -81,6 +81,41 @@ export async function validateImageFile(
   await prepareImageFile(input, limits, policy)
 }
 
+/** Verify and durably restore exact archived image bytes without normalization.
+ * Full raster decoding uses the operator's admission limits, independently of
+ * the destination normalization policy. Display and original-dimension metadata
+ * are preserved as provenance, not inferred from the current encoded raster.
+ * Cancellation rejects before publication; once publication starts it completes
+ * its durable object commit rather than reporting a false cancellation afterward.
+ * @param root - absolute versioned attachment root.
+ * @param input - complete archived bytes and original reference.
+ * @param limits - encoded-byte, decoded-pixel, dimension and media-type policy.
+ * @param signal - cancellation before atomic publication begins.
+ * @returns the unchanged reference after durable publication or deduplication.
+ */
+export async function restoreImageFile(
+  root: string,
+  input: StoredImageAttachment,
+  limits: ImageAttachmentLimits,
+  signal?: AbortSignal,
+): Promise<ImageAttachmentRef> {
+  signal?.throwIfAborted()
+  if (input.data.byteLength > limits.maxImageBytes) throw new AttachmentError('Image exceeds configured byte limit.', 'IMAGE_TOO_LARGE')
+  const data = Uint8Array.from(input.data)
+  const ref = structuredClone(input.ref)
+  const sha256 = ensureReference(ref)
+  if (digest(data) !== sha256 || data.byteLength !== ref.bytes) {
+    throw new AttachmentError('Archived image bytes do not match their reference.', 'ATTACHMENT_CORRUPT')
+  }
+  if (!limits.mediaTypes.includes(ref.mediaType)) throw new AttachmentError('Image type is not enabled.', 'UNSUPPORTED_IMAGE_TYPE')
+  const metadata = await inspectMetadata(data, ref.mediaType, limits)
+  signal?.throwIfAborted()
+  if (metadata.width !== ref.width || metadata.height !== ref.height) {
+    throw new AttachmentError('Archived image dimensions do not match their reference.', 'ATTACHMENT_CORRUPT')
+  }
+  return commitPreparedImageFile(root, { data, ref })
+}
+
 /** Fully prepared normalized object, verified before any batch member is persisted. */
 export interface PreparedImageFile {
   /** Deterministic normalized bytes whose digest is {@link ref.attachmentId}. */

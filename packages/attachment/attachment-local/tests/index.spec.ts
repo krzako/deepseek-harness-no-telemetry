@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { existsSync } from 'node:fs'
@@ -19,6 +20,26 @@ import LocalAttachmentStore, {
 } from '../src/index.ts'
 
 describe('local attachment service', () => {
+  it('restores an archived image despite a stricter normalization policy without changing its id', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-image-restore-'))
+    const ctx = new Context()
+    try {
+      await ctx.plugin(LocalAttachmentStore, { dshHome: home, normalizedImageMaxPixels: 1 })
+      const data = await sharp({ create: { width: 4, height: 3, channels: 3, background: 'red' } }).png().toBuffer()
+      const ref = { attachmentId: AttachmentId(`sha256:${createHash('sha256').update(data).digest('hex')}`),
+        mediaType: 'image/png' as const, bytes: data.length, width: 4, height: 3 }
+      expect(await ctx.attachments.restoreImage({ ref, data })).toEqual(ref)
+      expect((await ctx.attachments.readImage(ref)).data).toEqual(new Uint8Array(data))
+      const normalized = await ctx.attachments.saveImage({ data, mediaType: 'image/png' })
+      expect(normalized.attachmentId).not.toBe(ref.attachmentId)
+      const limited = new LocalAttachmentStore(new Context(), { dshHome: home, maxImagePixels: 11 })
+      await expect(limited.restoreImage({ ref, data })).rejects.toMatchObject({ code: 'IMAGE_TOO_MANY_PIXELS' })
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
   it('resolves every omitted admission limit explicitly', () => {
     const service = new LocalAttachmentStore(new Context(), {})
     expect(DEFAULT_MAX_IMAGE_BYTES).toBe(20 * 1024 * 1024)

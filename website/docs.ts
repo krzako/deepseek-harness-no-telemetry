@@ -2,9 +2,8 @@
  * Canonical publication manifest for the documentation website.
  *
  * Markdown stays in its owning repository tier. This manifest maps each
- * canonical source into matching route trees for both site locales; when a
- * translation is absent, both routes intentionally project the available
- * source instead of copying Markdown.
+ * canonical source into matching route trees for both site locales. Both
+ * routes project the same Markdown source.
  */
 
 /** Locale key used by the VitePress site. */
@@ -55,8 +54,8 @@ interface MirroredPage {
   sourceAliases?: string[] | Partial<Record<DocsLocale, string[]>>
 }
 
-type PairedPage = Omit<MirroredPage, 'source' | 'contentLocale' | 'sourceAliases'> & {
-  /** English side of a sibling `foo.md` / `foo.zh.md` pair. */
+type SharedPage = Omit<MirroredPage, 'source' | 'contentLocale' | 'sourceAliases'> & {
+  /** Canonical Markdown source projected into both route trees. */
   source: string
   /** Language-neutral repository aliases, such as the directory of an index page. */
   sourceAliases?: string[]
@@ -88,23 +87,22 @@ function mirroredPages(pages: MirroredPage[]): DocsPage[] {
   }))
 }
 
-function pairedPages(pages: PairedPage[]): DocsPage[] {
+function sharedPages(pages: SharedPage[]): DocsPage[] {
   return mirroredPages(pages.map((page) => {
-    const chineseSource = page.source.replace(/\.md$/, '.zh.md')
     const sharedAliases = page.sourceAliases ?? []
     return {
       ...page,
-      source: { root: chineseSource, en: page.source },
-      contentLocale: { root: 'zh-CN', en: 'en-US' },
+      source: page.source,
+      contentLocale: 'en-US',
       sourceAliases: {
-        root: [...sharedAliases, page.source],
-        en: [...sharedAliases, chineseSource],
+        root: sharedAliases,
+        en: sharedAliases,
       },
     }
   }))
 }
 
-const homeAndGuide = pairedPages([
+const homeAndGuide = sharedPages([
   {
     source: 'docs/user/index.md',
     route: 'index.md',
@@ -172,7 +170,7 @@ const homeAndGuide = pairedPages([
   },
 ])
 
-const develop = pairedPages([
+const develop = sharedPages([
   {
     source: 'docs/user/develop/basic/index.md',
     route: 'develop/basic/index.md',
@@ -258,7 +256,7 @@ const develop = pairedPages([
   },
 ])
 
-const cordisTutorial = pairedPages(([
+const cordisTutorial = sharedPages(([
   ['index.md', '总览', 'Overview'],
   ['01-first-plugin.md', '1. 第一个插件', '1. Your first plugin'],
   ['02-lifecycle-and-effects.md', '2. 生命周期与副作用', '2. Lifecycle and effects'],
@@ -267,7 +265,7 @@ const cordisTutorial = pairedPages(([
   ['05-config.md', '5. 配置', '5. Configuration'],
   ['06-composition-and-hmr.md', '6. 组合与热重载', '6. Composition and HMR'],
   ['07-into-the-harness.md', '7. 进入 Harness', '7. Into the harness'],
-] as const).map(([file, rootLabel, enLabel], order): PairedPage => ({
+] as const).map(([file, rootLabel, enLabel], order): SharedPage => ({
   source: `docs/cordis-tutorial/${file}`,
   route: `develop/cordis-tutorial/${file}`,
   label: { root: rootLabel, en: enLabel },
@@ -277,7 +275,7 @@ const cordisTutorial = pairedPages(([
   ...(file === 'index.md' ? { sourceAliases: ['docs/cordis-tutorial'] } : {}),
 })))
 
-const cordisPrimerReference = pairedPages([
+const cordisPrimerReference = sharedPages([
   {
     source: 'docs/cordis-primer.md',
     route: 'reference/cordis-primer.md',
@@ -356,8 +354,8 @@ const subsystemGroups = [
   ]],
 ] as const
 
-const subsystemsReference = subsystemGroups.flatMap(([rootSection, enSection, files]) => pairedPages(
-  files.map(([file, rootLabel, enLabel], order): PairedPage => ({
+const subsystemsReference = subsystemGroups.flatMap(([rootSection, enSection, files]) => sharedPages(
+  files.map(([file, rootLabel, enLabel], order): SharedPage => ({
     source: `docs/subsystems/${file}`,
     route: file === 'README.md' ? 'reference/subsystems/index.md' : `reference/subsystems/${file}`,
     label: { root: rootLabel, en: enLabel },
@@ -373,9 +371,9 @@ const subsystemsReference = subsystemGroups.flatMap(([rootSection, enSection, fi
 const reference = [
   // `docs/deepseek-llm-api-wire-extensions.md` is a repository-only provider protocol reference.
   // Projected links intentionally resolve to its GitHub source instead of a public site route.
-  ...pairedPages(([
+  ...sharedPages(([
     ['docs/architecture.md', 'reference/index.md', '架构', 'Architecture', 0],
-  ] as const).map(([source, route, rootLabel, enLabel, order]): PairedPage => ({
+  ] as const).map(([source, route, rootLabel, enLabel, order]): SharedPage => ({
     source,
     route,
     label: { root: rootLabel, en: enLabel },
@@ -383,12 +381,12 @@ const reference = [
     section: { root: '概念', en: 'Concepts' },
     order,
   }))),
-  ...pairedPages(([
+  ...sharedPages(([
     ['docs/capability-seams.md', 'reference/capability-seams.md', '能力服务', 'Capability services', 2],
     ['docs/agent-lifecycle.md', 'reference/agent-lifecycle.md', 'Agent 生命周期', 'Agent lifecycle', 3],
     ['docs/tool-execution-pipeline.md', 'reference/tool-execution-pipeline.md', 'Tool 执行', 'Tool execution', 4],
     ['docs/api-gateway.md', 'reference/api-gateway.md', 'API Gateway', 'API Gateway', 5],
-  ] as const).map(([source, route, rootLabel, enLabel, order]): PairedPage => ({
+  ] as const).map(([source, route, rootLabel, enLabel, order]): SharedPage => ({
     source,
     route,
     label: { root: rootLabel, en: enLabel },
@@ -396,11 +394,11 @@ const reference = [
     section: { root: '概念', en: 'Concepts' },
     order,
   }))),
-  ...pairedPages(([
+  ...sharedPages(([
     ['docs/config-catalog.md', 'reference/config-catalog.md', '插件配置', 'Plugin configuration'],
     ['docs/tool-catalog.md', 'reference/tool-catalog.md', 'Tool Schema', 'Tool schemas'],
     ['docs/persistence-catalog.md', 'reference/persistence-catalog.md', '持久化事件', 'Persistence events', 'deep'],
-  ] as const).map(([source, route, rootLabel, enLabel, outline], order): PairedPage => ({
+  ] as const).map(([source, route, rootLabel, enLabel, outline], order): SharedPage => ({
     source,
     route,
     label: { root: rootLabel, en: enLabel },
@@ -409,13 +407,13 @@ const reference = [
     order,
     ...(outline === undefined ? {} : { outline }),
   }))),
-  ...pairedPages(([
+  ...sharedPages(([
     ['context.md', 'Context', 'Context'],
     ['events.md', 'Events', 'Events'],
     ['fiber.md', 'Fiber', 'Fiber'],
     ['registry.md', 'Plugin Registry', 'Plugin Registry'],
     ['service.md', 'Service', 'Service'],
-  ] as const).map(([file, rootLabel, enLabel], order): PairedPage => ({
+  ] as const).map(([file, rootLabel, enLabel], order): SharedPage => ({
     source: `docs/cordis-api/${file}`,
     route: `reference/cordis-api/${file}`,
     label: { root: rootLabel, en: enLabel },
@@ -434,13 +432,13 @@ const reference = [
     section: { root: 'Cordis API', en: 'Cordis Core API' },
     order: order + 5,
   }))),
-  ...pairedPages(([
+  ...sharedPages(([
     ['adding-a-package.md', '新增 Package', 'Adding a package'],
     ['adding-a-tool.md', '新增 Tool', 'Adding a tool'],
     ['adding-an-llm-adapter.md', '新增 LLM Adapter', 'Adding an LLM adapter'],
     ['adding-a-settings-card.md', '新增设置卡片', 'Adding a settings card'],
     ['extension-cookbook.md', '扩展模式', 'Extension patterns'],
-  ] as const).map(([file, rootLabel, enLabel], order): PairedPage => ({
+  ] as const).map(([file, rootLabel, enLabel], order): SharedPage => ({
     source: `docs/cookbook/${file}`,
     route: `reference/cookbook/${file}`,
     label: { root: rootLabel, en: enLabel },

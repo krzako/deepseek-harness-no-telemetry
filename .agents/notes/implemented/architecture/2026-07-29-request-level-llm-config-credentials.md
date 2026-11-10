@@ -2,8 +2,6 @@
 
 Status: implemented
 
-English | [中文](2026-07-29-request-level-llm-config-credentials.zh.md)
-
 > Scope: the first production consumers of `ctx.settings` (the two LLM adapter plugins), the new `packages/credentials/` capability family, and the `packages/util/atomic-write` extraction. The follow-up wire surface (`settings.*`/`credentials.*` RPC, secret-role masking, the web settings form) is separate work outside this note's scope.
 
 ## Problem
@@ -23,6 +21,8 @@ The [settings seam](2026-07-28-user-settings-seam.md) shipped without a producti
 - **A bridge plugin (`dsh-llm-models`) owning one unified `models` dict** — with per-plugin namespaces there is nothing left to bridge, and the adapter-mapping rules it needed were pure invented indirection.
 - **Secrets in settings.yaml under `role('secret')` masking** — deleting the problem (references) beats mitigating it (mask + backfill + sync warnings); the coding-agent cohort is unanimous.
 - **Registry-level live retry policy** — making `providerRetryPolicy` re-read per call would silently change the `ctx.llm` capture contract every registration relies on; re-registering the route in place keeps that contract and stays observable.
+
+Local authentication inspection belongs to the adapter because its captured connection owns the credential reference and fallback policy. The LLM service delegates without performing a model request. DeepSeek and pi-ai use metadata-only credential describe when mounted, and inspect the launch environment only without that service. Provider-managed authentication remains distinct from verified presence; the inspector neither reads grant payloads nor refreshes them. This allows archive preview to report missing requirements without copying credentials into portable context.
 
 ## Consequences
 

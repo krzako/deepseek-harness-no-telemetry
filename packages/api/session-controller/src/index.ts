@@ -26,6 +26,8 @@ import type {
   ModelCatalog,
   SessionAttachmentRequest,
   SessionAttachmentValue,
+  SessionAuditArtifactRequest,
+  SessionAuditArtifactChunk,
   SessionCancelRequest,
   SessionCancelValue,
   SessionControlFrame,
@@ -339,6 +341,17 @@ export class SessionController extends TypertRemoteService {
   @Remote('attachment')
   attachment(request: SessionAttachmentRequest): Promise<SessionAttachmentValue> {
     return this.commands.attachment(request)
+  }
+
+  /**
+   * Stream an audit artifact only when this Session owns its fact and receipt.
+   * @param request - Session, fact, and digest identifying the payload.
+   * @param signal - caller cancellation for the whole stream.
+   * @returns bytes in order; a missing reference or integrity failure rejects the stream.
+   */
+  @Remote({ mode: 'stream' })
+  auditArtifact(request: SessionAuditArtifactRequest, signal: AbortSignal): AsyncIterable<SessionAuditArtifactChunk> {
+    return this.commands.auditArtifact(request, signal)
   }
 
   /**

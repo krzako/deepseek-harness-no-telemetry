@@ -1,0 +1,50 @@
+.root {
+  flex: 0 0 auto;
+  max-height: min(32vh, 320px);
+  overflow: auto;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.heading {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.item {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  padding: 5px 0;
+}
+
+.summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.payload {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 8px 0 0;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.load {
+  margin: 5px 0;
+  cursor: pointer;
+}
+
+.artifact {
+  margin-top: 8px;
+}
+
+.artifact button {
+  cursor: pointer;
+}

@@ -1,8 +1,22 @@
-# SearXNG search provider
+---
+description: "SearXNG search provider for deployments configuring a live search endpoint and maintainers diagnosing connectivity or result limits."
+kind: "package-reference"
+---
 
-English | [中文](README.zh.md)
+# @deepseek-ai/dsh-web-search-searxng
+
+## Summary
 
 This plugin registers `searxng` as a search provider on `ctx.web`. The model-facing `web_search` tool calls it through the web service. It uses SearXNG's `/search?q=…&format=json` API and returns source URLs, titles, snippets, and publication dates when present. It returns provider results without generating an answer.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+## Use this package
 
 Configure `baseURL` on the `web-search-searxng` Cordis row, or set `SEARXNG_BASE_URL` in the launch environment. The address is the instance root, including any path prefix. For example:
 
@@ -34,4 +48,8 @@ A changed search result changes retained tool output; changing provider settings
 
 ## Known Limitations and Deferred Work
 
-The provider reads one SearXNG results page. Engines and instances vary in coverage, and the JSON API must be enabled by the instance administrator.
+- The provider reads one SearXNG results page. Engines and instances vary in coverage, and the JSON API must be enabled by the instance administrator.
+
+### Dev Note
+
+None.

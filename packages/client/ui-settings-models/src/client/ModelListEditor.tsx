@@ -1,10 +1,10 @@
 /**
- * The model list of one pi-ai provider profile, plus the action that asks the
- * provider what it serves.
+ * The model list of one pi-ai or Codex provider profile. Pi-ai also offers an
+ * action that asks the provider what it serves.
  *
- * The list is the profile's `models` array as the card holds it: an empty list
- * means "serve this route's built-in catalog", and any entry replaces that
- * catalog, so a row is only ever added deliberately. Fetching asks the endpoint
+ * The list is the profile's `models` array as the card holds it. An empty
+ * pi-ai list uses its installed catalog; an empty Codex list offers no models.
+ * Fetching, where available, asks the endpoint
  * **the form currently shows** — including a key typed but not yet saved — so
  * adding a provider is one pass instead of save-then-return; the reply is
  * candidates the user picks from, never configuration written behind them.
@@ -81,8 +81,12 @@ export interface ModelListEditorProps {
   probeBlocked?: keyof typeof en | undefined
   /** The Host operations whose interrogation answers the fetch action. */
   operations: ModelsOperations
+  /** Hide endpoint discovery when this namespace has no discovery adapter. */
+  canFetch?: boolean
   /** Section copy. */
   t: (key: keyof typeof en) => string
+  /** Override the empty-list explanation for agents without unlisted model IDs. */
+  emptyMessageKey?: keyof typeof en
   /** Disable every control (read-only deployment or a pending write). */
   disabled: boolean
 }
@@ -334,7 +338,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             </button>
           )
           : null}
-        <button
+        {props.canFetch === false ? null : <button
           type="button"
           className={styles['linkButton']}
           disabled={disabled || busy || !askable || props.probeBlocked !== undefined}
@@ -344,9 +348,11 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
           onClick={() => { void fetchModels() }}
         >
           {busy ? t('fetching') : t('fetchModels')}
-        </button>
+        </button>}
       </div>
-      {models.length === 0 ? <p className={styles['modelEmpty']}>{t('modelsEmpty')}</p> : null}
+      {models.length === 0
+        ? <p className={styles['modelEmpty']}>{t(props.emptyMessageKey ?? 'modelsEmpty')}</p>
+        : null}
       {models.map((model, index) => (
         <div key={index} className={styles['modelEntry']}>
           <div className={styles['modelRow']}>

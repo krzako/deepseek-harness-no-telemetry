@@ -471,7 +471,9 @@ describe('agent/pre-step', () => {
     expect(() => {
       send(agent, 'blocked prompt')
     }).toThrow('append unavailable')
-    expect(events(agent)).toEqual([])
+    expect(events(agent)).toEqual([expect.objectContaining({
+      type: 'agent/driver-selected', data: { version: 1, driverId: 'standard' },
+    })])
     expect(agent.inbox.hasPending).toBe(false)
     expect(agent.status).toBe('idle')
   })

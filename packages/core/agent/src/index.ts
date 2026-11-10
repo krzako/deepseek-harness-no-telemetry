@@ -11,9 +11,10 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { isPromise } from 'node:util/types'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { SessionEvent, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionId, SessionImportLineage, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { Agent } from './types.ts'
-import type { AgentOptions } from './runtime-types.ts'
+import type { AgentOptions, SessionStartSource } from './runtime-types.ts'
+import type { AgentTransferPorts } from './session-transfer.ts'
 
 export * from './runtime-types.ts'
 export * from './types.ts'
@@ -21,6 +22,16 @@ export type * from './projection.ts'
 export * from './inbox.ts'
 export * from './consumed-work.ts'
 export * from './model-selection.ts'
+export * from './trace-correlation.ts'
+export * from './portable-session.ts'
+export * from './session-transfer.ts'
+export { projectStandardSession, projectStandardSessionStream } from './standard-session-export.ts'
+export { projectStandardImport } from './standard-session-import.ts'
+export type { StandardImportEntry, StandardImportProjection } from './standard-session-import.ts'
+export { standardTransferSource, standardTransferTarget } from './standard-transfer-ports.ts'
+export type { StandardImportPreparation } from './standard-transfer-ports.ts'
+export { buildStandardImportSeed } from './standard-import-seed.ts'
+export type { StandardImportSeed } from './standard-import-seed.ts'
 export { agentCarrier, agentEvents, assembleContextFor, emitAgentEvent } from './dispatch.ts'
 export type { AgentEventDispatch, AgentSubjectEvent } from './dispatch.ts'
 
@@ -73,9 +84,9 @@ export interface CreateAgentOptions {
   readonly sessionId: SessionId
   /**
    * Session creation metadata: validated absolute `cwd`, `parentSession`
-   * fork lineage, the `isSeeded` fork marker, the coarse `origin`
+   * fork lineage, separate `importLineage`, the `isSeeded` fork marker, the coarse `origin`
    * classification, and the `delegationDepth` recursion budget. Mirrors the
-   * `cwd`/`parentSession`/`isSeeded`/`origin`/`delegationDepth` fields of
+   * `cwd`/`parentSession`/`importLineage`/`isSeeded`/`origin`/`delegationDepth` fields of
    * {@link CreateSessionOptions.meta} in dsh-session (the internal-only
    * `createdAt`, used when reconstructing a persisted session, is deliberately
    * excluded — a factory caller never sets it). This is durable session data,
@@ -85,6 +96,7 @@ export interface CreateAgentOptions {
   readonly meta?: {
     readonly cwd?: string
     readonly parentSession?: SessionId
+    readonly importLineage?: SessionImportLineage
     readonly isSeeded?: boolean
     readonly origin?: 'subagent'
     readonly delegationDepth?: number
@@ -100,6 +112,12 @@ export interface CreateAgentOptions {
    * validator/snapshot boundary before publication.
    */
   readonly seed?: readonly SessionEvent[]
+  /**
+   * Explicit destination for an imported Session. The factory rejects a
+   * different driver selected in the seed; ordinary creation uses current
+   * selection policy instead.
+   */
+  readonly route?: Extract<AgentDriverRoute, { kind: 'import' }>
   /** Per-agent options (model, …). */
   readonly agentOptions?: AgentOptions
   /** Optional creation-only cancellation signal; detached before the returned handle becomes visible. */
@@ -207,6 +225,59 @@ export interface AgentFactory {
   resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>
 }
 
+/**
+ * One concrete turn driver created inside the shared AgentLoop lifecycle.
+ * The lifecycle factory retains sole ownership of session persistence,
+ * publication and rollback; a driver owns only execution and its scoped
+ * resources.
+ */
+export interface AgentDriver {
+  /** Stable agent implementation identity, independent of provider/model route. */
+  readonly driverId: string
+  readonly agent: Agent
+  /** Prepare any external execution state before the agent is published. */
+  start(source: SessionStartSource, signal: AbortSignal): Promise<void>
+  /** Stop and drain the driver, then unwind its agent-local scope. */
+  dispose(): Promise<void>
+}
+
+/** Browser-facing selector metadata for one full-agent driver route. */
+export interface AgentDriverCatalog {
+  readonly name: string
+  readonly models: readonly {
+    readonly id: string
+    readonly name: string
+    readonly description?: string
+    readonly inputModalities?: readonly ('text' | 'image')[]
+    readonly reasoning?: {
+      readonly efforts: readonly { readonly id: string; readonly name: string; readonly description?: string }[]
+      readonly defaultEffort?: string
+    }
+  }[]
+}
+
+/** Provider-selected constructor whose stable driver has registered both transfer ports. */
+export interface AgentDriverFactory {
+  /** Stable identity checked before constructing a driver for resume or import. */
+  readonly driverId: string
+  /** Optional selector metadata; this is an agent route, not an LLM adapter. */
+  readonly catalog?: AgentDriverCatalog
+  createDriver(ctx: Context, id: SessionId, options: AgentOptions, session: import('@deepseek-ai/dsh-session').Session): AgentDriver
+}
+
+/** Selection intent: current policy creates, durable identity resumes, explicit target imports. */
+export type AgentDriverRoute =
+  | { readonly kind: 'create' }
+  | { readonly kind: 'resume'; readonly driverId?: string }
+  | { readonly kind: 'import'; readonly driverId: string }
+
+/** Optional policy for choosing a full driver before the ordinary loop for a Session. */
+export interface AgentDriverSelector {
+  /** Stable identity checked before policy construction for resume or import. */
+  readonly driverId: string
+  selectDriver(ctx: Context, id: SessionId, options: AgentOptions, session: import('@deepseek-ai/dsh-session').Session, route: AgentDriverRoute): AgentDriver | undefined
+}
+
 /** Thrown when create/resume is called before an agent factory is registered. */
 const NO_FACTORY_MESSAGE = 'no agent factory registered (load an agent-loop plugin)'
 const NO_INITIATOR_MESSAGE = 'no initiating agent is active'
@@ -250,6 +321,9 @@ interface FactorySlot {
 export class AgentRegistry extends Service {
   private store = new Map<SessionId, AgentEntry>()
   private factory: FactorySlot | undefined
+  private readonly driverFactories = new Map<string, AgentDriverFactory>()
+  private readonly transferPorts = new Map<string, AgentTransferPorts>()
+  private driverSelector: AgentDriverSelector | undefined
   private readonly initiators = new AsyncLocalStorage<Agent | undefined>()
   private readonly initiatorRuns = new AsyncLocalStorage<InitiatorRun>()
   private initiatorState: 'active' | 'closing' | 'disposed' = 'active'
@@ -380,6 +454,166 @@ export class AgentRegistry extends Service {
     // registration under that effect.
     // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
     return dispose
+  }
+
+  /**
+   * Register one exact `AgentOptions.provider` route as a full turn driver.
+   * The driver must register matching canonical source and target ports first.
+   * @param provider - exact provider selector carried by AgentOptions.
+   * @param factory - driver constructor for that route.
+   * @returns effect-scoped disposer that removes this exact registration.
+   */
+  setDriverFactory(provider: string, factory: AgentDriverFactory): () => void {
+    if (provider.length === 0) throw new Error('agent driver provider must not be empty')
+    if (factory.driverId.length === 0 || factory.driverId === 'standard') throw new Error('agent driver factory requires a non-reserved driver id')
+    const dispose = this.ctx.effect(() => {
+      if (!this.transferPorts.has(factory.driverId)) {
+        throw new Error(`agent driver ${JSON.stringify(factory.driverId)} requires canonical transfer ports`)
+      }
+      if (this.driverFactories.has(provider)) {
+        throw new Error(`an agent driver is already registered for provider ${JSON.stringify(provider)}`)
+      }
+      const target = (factory as AgentDriverFactory & { [symbols.original]?: AgentDriverFactory })[symbols.original] ?? factory
+      this.driverFactories.set(provider, target)
+      return () => { this.driverFactories.delete(provider) }
+    }, `agents.setDriverFactory(${provider})`)
+    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
+    return dispose
+  }
+
+  /**
+   * Register both canonical transfer directions for one full-agent driver.
+   * The registration follows the caller's effect lifetime; driver selection
+   * and transfer lookup use the same stable driver id, not provider names.
+   * @param driverId - stable full-agent driver identity.
+   * @param ports - matching source and target ports for the shared DSH format.
+   * @returns effect-scoped disposer for this exact registration.
+   */
+  setTransferPorts<Result>(driverId: string, ports: AgentTransferPorts<Result>): () => void {
+    if (driverId.length === 0 || ports.source.driverId !== driverId || ports.target.driverId !== driverId) {
+      throw new Error('agent transfer ports must match a nonempty driver id')
+    }
+    if (typeof ports.target.createImportedAgent !== 'function') {
+      throw new Error('agent transfer target requires import publication')
+    }
+    const dispose = this.ctx.effect(() => {
+      if (this.transferPorts.has(driverId)) {
+        throw new Error(`agent transfer ports are already registered for driver ${JSON.stringify(driverId)}`)
+      }
+      this.transferPorts.set(driverId, ports)
+      return () => { this.transferPorts.delete(driverId) }
+    }, `agents.setTransferPorts(${driverId})`)
+    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
+    return dispose
+  }
+
+  /**
+   * Resolve both directions for a full-agent driver before transfer preview.
+   * @param driverId - recorded or explicitly selected driver identity.
+   * @returns registered canonical transfer ports.
+   */
+  getTransferPorts(driverId: string): AgentTransferPorts {
+    const ports = this.transferPorts.get(driverId)
+    if (ports === undefined) throw new Error(`agent transfer ports are unavailable for driver ${JSON.stringify(driverId)}`)
+    return ports
+  }
+
+  /** Register the one policy that may select a full driver for an ordinary provider route.
+   * The driver's canonical source and target ports must already be registered.
+   * @param selector - decision invoked after exact driver routes and before the ordinary loop.
+   * @returns the effect-scoped disposer that removes this policy.
+   */
+  setDriverSelector(selector: AgentDriverSelector): () => void {
+    if (selector.driverId.length === 0 || selector.driverId === 'standard') throw new Error('agent driver selector requires a non-reserved driver id')
+    const dispose = this.ctx.effect(() => {
+      if (!this.transferPorts.has(selector.driverId)) {
+        throw new Error(`agent driver ${JSON.stringify(selector.driverId)} requires canonical transfer ports`)
+      }
+      if (this.driverSelector !== undefined) throw new Error('an agent driver selector is already registered')
+      const target = (selector as AgentDriverSelector & { [symbols.original]?: AgentDriverSelector })[symbols.original] ?? selector
+      this.driverSelector = target
+      return () => { this.driverSelector = undefined }
+    }, 'agents.setDriverSelector()')
+    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
+    return dispose
+  }
+
+  /** Whether a full-agent driver owns this exact provider route.
+   * @param provider - exact provider route to check.
+   * @returns true when a full-agent driver is registered for the route.
+   */
+  hasDriverFactory(provider: string): boolean {
+    return this.driverFactories.has(provider)
+  }
+
+  /** Detached selector metadata for registered full-agent routes.
+   * @returns catalogs whose nested model metadata can be read without mutating registrations.
+   */
+  listDriverCatalogs(): readonly (AgentDriverCatalog & { readonly id: string })[] {
+    return [...this.driverFactories.entries()].flatMap(([id, factory]) => factory.catalog === undefined
+      ? []
+      : [{
+        id,
+        name: factory.catalog.name,
+        models: factory.catalog.models.map(model => ({
+          ...model,
+          ...(model.inputModalities === undefined ? {} : { inputModalities: [...model.inputModalities] }),
+          ...(model.reasoning === undefined ? {} : {
+            reasoning: {
+              efforts: model.reasoning.efforts.map(effort => ({ ...effort })),
+              ...(model.reasoning.defaultEffort === undefined ? {} : { defaultEffort: model.reasoning.defaultEffort }),
+            },
+          }),
+        })),
+      }])
+  }
+
+  /** Resolve one advertised full-agent model, returning undefined for an LLM route.
+   * @param provider - exact full-agent provider route.
+   * @param model - advertised model ID for that route.
+   * @returns the model metadata, or undefined when the provider belongs to the ordinary LLM loop.
+   */
+  resolveDriverModel(provider: string, model: string): AgentDriverCatalog['models'][number] | undefined {
+    const factory = this.driverFactories.get(provider)
+    if (factory === undefined) return undefined
+    const entry = factory.catalog?.models.find(candidate => candidate.id === model)
+    if (entry === undefined) throw new Error(`full-agent provider ${JSON.stringify(provider)} does not advertise model ${JSON.stringify(model)}`)
+    return entry
+  }
+
+  /**
+   * Create the selected alternative driver, or return undefined for the default React loop.
+   * @param ctx - lifecycle context supplied to the driver.
+   * @param id - shared Agent and Session identity.
+   * @param options - provider selection and driver options.
+   * @param session - prepared, unpublished Session owned by the lifecycle factory.
+   * @param route - current-policy creation, persisted resume, or explicit import target.
+   * @returns the selected driver, or undefined when the default loop owns the route.
+   */
+  createDriver(ctx: Context, id: SessionId, options: AgentOptions, session: import('@deepseek-ai/dsh-session').Session, route: AgentDriverRoute = { kind: 'create' }): AgentDriver | undefined {
+    if (route.kind !== 'create' && route.driverId === 'standard') return undefined
+    const provider = options.provider
+    const factory = provider === undefined ? undefined : this.driverFactories.get(provider)
+    const selector = factory === undefined ? this.driverSelector : undefined
+    if (route.kind !== 'create' && route.driverId !== undefined) {
+      const offered = factory?.driverId ?? selector?.driverId ?? 'standard'
+      if (offered !== route.driverId) {
+        throw new Error(`agent "${id}" requires driver ${JSON.stringify(route.driverId)}, got ${JSON.stringify(offered)}`)
+      }
+    }
+    if (factory !== undefined) {
+      const receiver = getTraceable(ctx, factory)
+      // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply supplies the traced service receiver explicitly
+      return Reflect.apply(factory.createDriver, receiver, [ctx, id, options, session])
+    }
+    if (selector === undefined) return undefined
+    const receiver = getTraceable(ctx, selector)
+    // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply supplies the traced service receiver explicitly
+    const selected: AgentDriver | undefined = Reflect.apply(selector.selectDriver, receiver, [ctx, id, options, session, route])
+    if (route.kind !== 'create' && route.driverId !== undefined && selected === undefined) {
+      throw new Error(`agent "${id}" requires driver ${JSON.stringify(route.driverId)}, got "standard"`)
+    }
+    return selected
   }
 
   /** Return the active creation factory. */

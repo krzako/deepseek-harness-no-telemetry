@@ -8,6 +8,7 @@ export type PluginsSettingsLocaleKey =
   | 'bashTitle' | 'bashDescription' | 'bashTimeoutMs' | 'bashTimeoutMsHint'
   | 'bashMaxOutputBytes' | 'bashMaxOutputBytesHint'
   | 'agentLoopTitle' | 'agentLoopDescription' | 'agentLoopMaxParallel' | 'agentLoopMaxParallelHint'
+  | 'codexTitle' | 'codexDescription' | 'codexLabel' | 'codexLabelHint' | 'codexEnabled' | 'codexEnabledHint'
   | 'webSearchTitle' | 'webSearchDescription' | 'webSearchMaxResults' | 'webSearchMaxResultsHint'
   | 'webSearchMaxQueries' | 'webSearchMaxQueriesHint' | 'webSearchMaxConcurrent' | 'webSearchMaxConcurrentHint'
   | 'webSearchTimeoutMs' | 'webSearchTimeoutMsHint'
@@ -54,6 +55,12 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   agentLoopDescription: 'How the agent dispatches tool calls.',
   agentLoopMaxParallel: 'Parallel tool calls',
   agentLoopMaxParallelHint: 'Upper bound on parallel-safe calls running at once within one step.',
+  codexTitle: 'Codex',
+  codexLabel: 'Agent label',
+  codexLabelHint: 'Leave blank to use the settings key codex.',
+  codexDescription: 'Choose whether new sessions use the Codex agent driver.',
+  codexEnabled: 'Use Codex for configured models',
+  codexEnabledHint: 'When off, new sessions use the standard agent loop. Existing sessions keep their original driver.',
   webSearchTitle: 'Web Search',
   webSearchDescription: 'Control how much search work agents may run at once.',
   webSearchMaxResults: 'Maximum results',
@@ -131,6 +138,12 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   agentLoopDescription: 'Agent 如何派发工具调用。',
   agentLoopMaxParallel: '并行工具调用数',
   agentLoopMaxParallelHint: '同一步内最多同时运行多少个可并行的调用。',
+  codexTitle: 'Codex',
+  codexLabel: 'Agent 名称',
+  codexLabelHint: '留空时使用设置键 codex。',
+  codexDescription: '选择新会话是否使用 Codex Agent 驱动。',
+  codexEnabled: '为已配置模型使用 Codex',
+  codexEnabledHint: '关闭后新会话使用标准 Agent 循环；已有会话保留原来的驱动。',
   webSearchTitle: '网页搜索',
   webSearchDescription: '控制 Agent 可同时执行多少搜索工作。',
   webSearchMaxResults: '最大结果数',

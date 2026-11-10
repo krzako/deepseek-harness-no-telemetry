@@ -9,6 +9,9 @@
   ],
   "references": [
     {
+      "path": "../../util/brand"
+    },
+    {
       "path": "../../../vendor/cosmokit"
     },
     {
@@ -34,6 +37,9 @@
     },
     {
       "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../util/values"
     }
   ]
 }

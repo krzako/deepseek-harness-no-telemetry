@@ -23,6 +23,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { AgentLoopCard } from './AgentLoopCard.tsx'
 import { BashCard } from './BashCard.tsx'
 import { ConfigurablePluginsTab } from './ConfigurablePluginsTab.tsx'
+import { CodexCard } from './CodexCard.tsx'
 import { PluginsSettingsSection } from './PluginsSettingsSection.tsx'
 import { SearxngCard } from './SearxngCard.tsx'
 import type { PluginsSettingsSectionInjected, PluginsSettingsTabEntry } from './PluginsSettingsSection.tsx'
@@ -31,6 +32,7 @@ import { WebSearchCard } from './WebSearchCard.tsx'
 import { AGENT_LOOP_NS, AgentLoopCardController } from './agent-loop-card-controller.ts'
 import { SHELL_NS, BashCardController } from './bash-card-controller.ts'
 import { ConfigurablePluginsTabController } from './tab-store.ts'
+import { CODEX_NS, CodexCardController } from './codex-card-controller.ts'
 import { SEARXNG_NS, SearxngCardController } from './searxng-card-controller.ts'
 import { WEB_SEARCH_NS, WebSearchCardController } from './web-search-card-controller.ts'
 import {
@@ -70,6 +72,7 @@ export function apply(ctx: ClientContext): void {
 
   const bash = new BashCardController(ctx.settingsScope.bind({ namespace: SHELL_NS }))
   const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }))
+  const codex = new CodexCardController(ctx.settingsScope.bind({ namespace: CODEX_NS }))
   const webSearch = new WebSearchCardController(ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }))
   const searxng = new SearxngCardController(
     ctx.settingsScope.bind({ namespace: SEARXNG_NS }),
@@ -181,6 +184,12 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       inject: () => agentLoop.inject(),
     }, AgentLoopCard)
+    yield ctx.slots.register({
+      name: 'settings.plugin.item',
+      key: CODEX_NS,
+      locale: NS,
+      inject: () => codex.inject(),
+    }, CodexCard)
     yield ctx.slots.register({
       name: 'settings.plugin.item',
       key: WEB_SEARCH_NS,

@@ -64,7 +64,7 @@ describe('Session log export Fetch route', () => {
     const shared = connection.createSharedFetchHandler('/api')
 
     const response = await shared.fetch(new Request(
-      `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1`,
+      `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1&format=log`,
     ))
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toBe('application/zip')
@@ -72,20 +72,41 @@ describe('Session log export Fetch route', () => {
     expect(strFromU8(files[SESSION_LOG_FILENAME] as Uint8Array)).toContain('"id":"session-1"')
 
     const head = await shared.fetch(new Request(
-      `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1`, { method: 'HEAD' },
+      `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1&format=log`, { method: 'HEAD' },
     ))
     expect(head.status).toBe(200)
     expect(head.body).toBeNull()
 
     await dispose()
     expect((await shared.fetch(new Request(
-      `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1`,
+      `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1&format=log`,
     ))).status).toBe(404)
+  })
+
+  it('refuses default and explicit portable GET/HEAD for a legacy log without a driver', async () => {
+    const { connection, dispose } = await mounted(true)
+    try {
+      const shared = connection.createSharedFetchHandler('/api')
+      for (const method of ['GET', 'HEAD']) {
+        for (const format of ['', '&format=portable']) {
+          const response = await shared.fetch(new Request(
+            `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1${format}`, { method },
+          ))
+          expect(response.status).toBe(409)
+          expect(response.headers.get('content-type')).not.toBe('application/zip')
+          if (method === 'HEAD') expect(response.body).toBeNull()
+          else expect(await response.text()).toContain('portable session export is unavailable')
+        }
+      }
+    } finally { await dispose() }
   })
 
   it('validates the query before reporting missing export services', async () => {
     const { connection, dispose } = await mounted(false)
     const shared = connection.createSharedFetchHandler('/api')
+    for (const query of ['includeWorkspace=1', 'includeWorkspace=true&format=log']) {
+      expect((await shared.fetch(new Request(`http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1&${query}`))).status).toBe(400)
+    }
     expect((await shared.fetch(new Request(`http://host${SESSION_LOG_EXPORT_PATH}`))).status).toBe(400)
     expect((await shared.fetch(new Request(
       `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1&includeDescendants=1`,
@@ -100,6 +121,12 @@ describe('Session log export Fetch route', () => {
     expect(Config({})).toEqual({ compressionLevel: 6 })
     expect(Config({ compressionLevel: 0 })).toEqual({ compressionLevel: 0 })
     expect(Config({ compressionLevel: 9 })).toEqual({ compressionLevel: 9 })
+    expect(Config({ maxPortableEntryBytes: 1024, maxPortableTotalUncompressedBytes: 4096 }))
+      .toEqual({ compressionLevel: 6, maxPortableEntryBytes: 1024, maxPortableTotalUncompressedBytes: 4096 })
+    for (const value of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => Config({ maxPortableEntryBytes: value })).toThrow()
+      expect(() => Config({ maxPortableTotalUncompressedBytes: value })).toThrow()
+    }
     for (const compressionLevel of [-1, 10, 1.5]) {
       expect(() => Config({ compressionLevel } as never)).toThrow()
     }

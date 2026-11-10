@@ -1,0 +1,32 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false
+  },
+  "include": [
+    "./**/*.ts"
+  ],
+  "references": [
+    {
+      "path": ".."
+    },
+    {
+      "path": "../../../../vendor/loader"
+    },
+    {
+      "path": "../../../core/agent-loop"
+    },
+    {
+      "path": "../../../fs/fs-local"
+    },
+    {
+      "path": "../../../fs/tool-fs"
+    },
+    {
+      "path": "../../../llm/llm-deepseek"
+    }
+  ]
+}

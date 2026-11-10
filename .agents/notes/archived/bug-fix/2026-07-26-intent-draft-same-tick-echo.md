@@ -3,8 +3,6 @@
 Status: implemented
 Archived: 2026-07-26
 
-English | [中文](2026-07-26-intent-draft-same-tick-echo.zh.md)
-
 ## Problem
 
 The hero composer ("Let's start building") is a controlled textarea whose value is the frontend Session Intent's retained prompt, read from the sessions **list** snapshot (`EmptyState` binds `intent.prompt` via `useSessions`). Typing routed through `SessionManager.updateIntent → Session.updatePendingPrompt`, which flushes the **Session's own** notifier synchronously — but the list snapshot the composer actually renders from only heard about the change through the intent watch subscription in `startIntent`, which calls `markDirty()`, a microtask-deferred flush.

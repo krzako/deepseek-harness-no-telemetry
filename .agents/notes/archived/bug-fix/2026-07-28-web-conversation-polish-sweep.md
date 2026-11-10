@@ -3,8 +3,6 @@
 Status: implemented
 Archived: 2026-08-07
 
-English | [中文](2026-07-28-web-conversation-polish-sweep.zh.md)
-
 ## Problem
 
 A design review of the web GUI's conversation surfaces found a batch of presentation defects: portal menus painted one frame at the wrong position before repositioning (visible open jump), the chat column split one tool run into several groups whenever a step message carried only tool-call heads, tool row summaries printed workspace-absolute paths that consumed most of the row, the running-row sweep was implemented as an alpha mask that dimmed the whole row, the hero workspace chip resurrected a deleted workspace's folder name from the session cwd, and the header showed a turns counter nobody asked for next to a 13px title.

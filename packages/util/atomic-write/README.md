@@ -5,11 +5,9 @@ kind: "package-library"
 
 # @deepseek-ai/dsh-atomic-write
 
-English | [中文](README.zh.md)
-
 ## Summary
 
-`dsh-atomic-write` replaces a file's contents in one atomic step: readers of the target always observe either the complete old content or the complete new content, never a partial write. It also serializes read-modify-write cycles across processes with a writer lock, so concurrent writers of one file cannot resurrect each other's state. The caller states the permission bits for every replacement and the fresh inode carries them through the swap, so replacing a wider-permission file narrows it without a chmod race. It is a zero-dependency library shared by file-backed stores such as the user-settings document and the credentials store; a `cordis.yml` cannot load it, and crash durability is the caller's policy because there is no `fsync`.
+`dsh-atomic-write` replaces a file's contents in one atomic step: readers of the target always observe either the complete old content or the complete new content, never a partial write. It also serializes read-modify-write cycles across processes with a writer lock, so concurrent writers of one file cannot resurrect each other's state. The caller states the permission bits for every replacement and the fresh inode carries them through the swap, so replacing a wider-permission file narrows it without a chmod race. It is a library shared by file-backed stores such as the user-settings document and the credentials store; a `cordis.yml` cannot load it. Ordinary writes remain atomic without flush barriers. Callers requiring durability can select `durable: true`; Koffi is loaded only for that path on Windows.
 
 ## Table of Contents
 
@@ -37,6 +35,12 @@ await writeFileAtomic('/home/u/.dsh/settings.yaml', text, { mode: 0o600 })
 ```
 
 Parent directories are created as needed, and readers observe either the old or the new complete content. On Windows, transient replacement interference reported as `EACCES`, `EBUSY`, or `EPERM` is retried for a bounded interval; any remaining failure removes the temporary file and leaves the target untouched.
+
+### Requesting durable publication
+
+Pass `durable: true` only after preparing an existing parent directory. This mode does not create parents because making an ancestor hierarchy durable belongs to its owner. It flushes the temporary payload and closes its handle before publication. POSIX then renames the sibling and flushes the parent directory; Windows uses `MoveFileExW` with replace-existing and write-through flags, without a copy/delete fallback. Guarantees depend on the filesystem and device honoring those barriers. A process-crash recovery workflow must still retain and inspect its own transaction state.
+
+If the POSIX parent flush fails after rename, `AtomicWriteDurabilityError` reports `published: true`, the destination path and the underlying cause. The new file remains visible; the caller must not infer rollback or blindly repeat a side effect. Failures before publication remove the temporary sibling, and cleanup failure preserves both errors in an AggregateError. The same bounded Windows retry applies to transient native replacement failures. See the [durability decision](../../../.agents/notes/implemented/architecture/2026-10-25-durable-atomic-file-publication.md).
 
 ### Coordinating writers
 
@@ -75,6 +79,7 @@ The package is built on one separation: the atomic commit owns the swap, and the
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `writeFileAtomic` and `withFileLock`, the package's whole surface |
+| [`src/durable.ts`](src/durable.ts) | Platform flush and Windows write-through publication |
 | — | No runtime invariant companion is published; this pure filesystem primitive owns no event stream or mutable runtime data; its replacement contract is enforced by unit tests. |
 
 ### Write path
@@ -100,7 +105,7 @@ Read these pages when you need the consuming stores or the family this primitive
 
 - [User-settings file store](../../settings/settings-file/README.md) — the settings document every write replaces through this package.
 - [Credentials store](../../credentials/credentials-local/README.md) — the credentials file this package locks and replaces.
-- [util group map](../README.md) — the zero-dependency utility family this package belongs to.
+- [util group map](../README.md) — the utility family this package belongs to.
 
 -----
 
@@ -120,7 +125,7 @@ Nothing here enters a request prefix, so provider cache reuse is unaffected.
 
 These limits define where the package is not the right tool. They are current package constraints, not a task backlog.
 
-- **Atomic, not durable** — no `fsync` of the file or its directory, so after a crash the rename may be observed unwound. The file-backed stores here re-read and republish on boot, keeping durability the caller's policy.
+- **Durability is explicit** — ordinary writes still omit flush barriers. Durable writes require existing parents and do not make an ancestor hierarchy durable; a failed final barrier can leave the replacement visible. Windows permission modes do not establish owner-only ACLs, which remain the caller's directory policy.
 - **String content only** — no `Buffer` or stream form until a consumer needs one.
 - **Orphaned locks require operator recovery** — a process that exits while holding the lock leaves the sibling behind; later writers time out without deleting it.
 
@@ -130,6 +135,6 @@ These limits define where the package is not the right tool. They are current pa
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-A durability-replacement that `fsync`s the file and parent directory and preserves owner-only permissions on Windows remains open (tracked as `settings-atomic-durability` in source).
+Existing settings and credentials consumers retain their ordinary atomic-write behavior. Selecting durable publication and establishing owner-only Windows directory ACLs are separate consumer decisions.
 
 </details>

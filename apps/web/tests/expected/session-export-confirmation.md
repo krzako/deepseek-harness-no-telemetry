@@ -1,0 +1,9 @@
+- dialog "Export unencrypted Session":
+  - heading "Export unencrypted Session" [level=2]
+  - button "Close":
+    - img
+  - paragraph: The ZIP contains complete conversation content, prompts, tool results and attachments without automatic redaction. Anyone with the file can read its contents. A portable archive preserves agent context; a log-only archive cannot fully restore agent state. Workspace files are excluded unless you choose the workspace ZIP. That option includes all files, including hidden files and secrets.
+  - button "Download portable ZIP (unencrypted)"
+  - button "Download ZIP with workspace (unencrypted)"
+  - button "Download log only (unencrypted)"
+  - button "Close"

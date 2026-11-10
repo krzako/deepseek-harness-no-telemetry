@@ -2,8 +2,6 @@
 
 Status: implemented
 
-English | [中文](2026-09-19-admin-owned-web-search-limits.zh.md)
-
 ## Problem
 
 Search volume and concurrency were fixed inside the model-facing tool configuration. Administrators had no product surface for bounding result context, multi-query fan-out, or total SearXNG pressure. Giving those controls to the model would make resource policy prompt-dependent and enlarge the tool schema. Pagination would also require extra model turns and retained prompt instructions for a use case that can be served by one bounded response.

@@ -5,8 +5,6 @@ kind: "package-library"
 
 # @deepseek-ai/dsh-session-format
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-session-format` lets persistence code restore a current Session directly or compose a unique sequence of adjacent whole-artifact migrations. It snapshots every durable input and output as detached lossless JSON, validates exact version progress, and keeps header-only listing separate from body reads. Physical framing, compression, immutable generation naming, exclusive publication, and Cordis lifecycle behavior remain outside this pure library.

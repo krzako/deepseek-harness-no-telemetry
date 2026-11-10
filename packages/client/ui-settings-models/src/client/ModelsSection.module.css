@@ -305,7 +305,7 @@
   gap: 12px;
 }
 
-/* The two ways to gain a provider, as equal siblings spanning the same width
+/* The ways to gain a provider, as equal siblings spanning the same width
    as the rows above. Wraps rather than shrinking below a legible label. */
 .addActions {
   display: flex;
@@ -314,7 +314,7 @@
 }
 
 .addButton {
-  /* Overrides the shared button base above: these two are not pills sitting in
+  /* Overrides the shared button base above: these actions are not pills sitting in
      a footer but the last slot of the provider list, so they split the row
      evenly and repeat the row cards' corner. Dashed, like every other "nothing
      here yet" affordance on this page, to read as a place rather than a

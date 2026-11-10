@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-agent-loop
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-agent-loop` creates agents — fresh or resumed from persisted history — and runs the turn and step lifecycle that claims prompts, assembles requests, streams model responses, dispatches tool calls, and appends every result back to the session log. As the default driver it implements the `Agent` interface from `dsh-agent` and registers its factory there, so plugins create and drive agents through `ctx.agents` without depending on this package. Declarative config entries start agents automatically at boot, and `maxParallelToolCalls` caps how many parallel-safe tool calls run at once. It is the harness's only concrete loop — everything beyond "call the model, run the tools, repeat" belongs to plugins listening on the event taxonomy. Choose it as the driver for standard compositions; swap it by implementing `Agent` and registering through `ctx.agents`.
@@ -58,6 +56,10 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Create or resume agents programmatically
 
+After a reviewed standard → standard transfer, `createStandardImportedAgent(ctx, preparation, options?)` creates a new Session through the same factory with the imported seed and durable lineage. It installs the source system instruction as a complete literal section before publication and restores that section on resume; conflicting complete sections reject creation. Historical model and tool records stay in the seed and are not executed. The caller must supply referenced attachment bytes through its destination composition.
+
+The loop registers the standard driver's portable export/import pair under `standard`. Its source flushes a mounted Session before reading persistence, or opens a stored-only Session read-only after the Agent has closed; neither path resumes historical work. Without persistence it projects a mounted completed Session. The ZIP source yields canonical items from that Session's frozen event snapshot without retaining a second full item array; import preview still returns a resident context. Its import target reads `ctx.llm.listProviders()` and each provider's current `listModels()` at preview and commit; unlisted models are not offered as transfer targets. Resolved attachment references belong to the individual transfer, not this long-lived registration.
+
 Plugins and hosts create agents through `ctx.agents.create()` and resume persisted sessions through `ctx.agents.resume()`; both return an `AgentHandle` whose `dispose()` owns exact teardown. The loop runs each created agent to completion — the handle is only needed when the caller must tear the agent down itself.
 
 ```text
@@ -95,6 +97,7 @@ After `agent/request`, `ctx.llm.prepareCall()` validates adapter-owned fields an
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `AgentLoop` service, config schema, declarative agent startup, factory registration |
+| [`src/standard-import.ts`](src/standard-import.ts) | Publish a reviewed standard-source import through the common Agent factory |
 | [`src/agent.ts`](src/agent.ts) | The concrete `ReactLoopAgent` driver: inbox, turn/step machine, cancellation |
 | [`src/tool-calls.ts`](src/tool-calls.ts) | Tool scheduling: exclusive barriers and the bounded parallel pool |
 | [`src/runtime-context.ts`](src/runtime-context.ts) | Per-step runtime-context snapshot handling |
@@ -108,6 +111,10 @@ Creation is one rollback-covered transaction: construct a private session, concr
 ### Persistence integration
 
 The loop is the production acquisition point for session write handles. When `ctx.sessionPersistence` is mounted, `create`/`createAgent` call `persistence.create(header)` — storing the durable identity and taking write ownership before publication — and append the constructor seed through the handle; `resume` calls `persistence.open(id, 'write')` first (excluding a concurrent resume of the same id), reads the physically valid log through the handle, and appends `interruptedTurnClosers` for a log crashed mid-turn as an ordinary batch — semantic crash repair is the agent layer's job, not a storage entry point. Immediately before publication, `appendUnstoredSuffix` stores any events appended during the setup window (seed markers, delegation policy records), which never re-emit through `session/event`. Once published, the mounted backend routes the session's `session/event` batches, `session/flush` barriers, and `session/disposed` retirement into the active write handle by session id; the loop touches storage only through the handle it owns. The memoized teardown closes the handle — close drains any routed buffer — after the loop commits the session's closing events, provably releasing write ownership. Without a backend, sessions are memory-only and nothing else changes.
+
+The selected driver id is logged separately from the provider/model route and flushed through the owned write handle before driver startup. Resume rejects a different driver even if settings or model-provider names changed. A legacy Session without that event receives one selection when it resumes; completed standard turns and Codex thread bindings still guide its initial selection.
+
+The selector receives a distinct `create`, `resume`, or `import` route: fresh creation follows current policy, resume carries the recorded driver id when present, and `ctx.agents.create({ route: { kind: 'import', driverId } })` selects an import destination independently of creation policy. The factory rejects a seed whose recorded driver conflicts with that destination before publication. Preparing a portable transfer does not itself create or publish an agent.
 
 ### Turn and step flow
 
@@ -201,3 +208,7 @@ These limits define when the loop needs special care. They are current package c
 None.
 
 </details>
+
+Registered full-agent targets also expose `createImportedAgent(preparation, options?)`. The preparation comes from that target’s reviewed import port; the returned handle owns teardown after the shared Agent factory commits publication. Options carry the destination cwd, unpublished setup and cancellation. Standard and Codex delegate to their existing same-driver creation paths. This common dispatch does not implement cross-driver context projection, attachment installation or archive/workspace transaction rollback.
+
+Transactional imports use `SessionPersistence.beginImport`: the write handle flushes durably while normal list/stat/open remain fenced. Unsupported providers reject before creating a Session. JSONL reserves a fresh identity under its kernel write lease and persists a pending visibility marker before log bytes; publication durably changes the marker, invokes the synchronous registry callback, and restores the fence if that callback fails. Only this fresh, uncommitted import may be rolled back; published imports and pre-existing generations cannot be removed by rollback. The Agent factory starts the driver with durable seed data before publication, disposes it on failure, and reports cleanup errors instead of swallowing them. An interrupted process leaves a hidden, reserved pending import, never an automatically resumed Session; automatic recovery or deletion of abandoned imports is not implemented. Normal rollback removes the uncommitted log and markers but retains the stable POSIX lock inode. Windows namespace changes use the existing write-through move primitive.

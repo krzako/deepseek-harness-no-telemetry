@@ -15,11 +15,8 @@ import { describe, expect, it } from 'vitest'
 const root = resolve(import.meta.dirname, '..')
 const PACKAGE_README_GLOBS = [
   'packages/README.md',
-  'packages/README.zh.md',
   'packages/*/README.md',
-  'packages/*/README.zh.md',
   'packages/*/*/README.md',
-  'packages/*/*/README.zh.md',
 ] as const
 
 function packageReadmes(): string[] {
@@ -66,6 +63,7 @@ const PACKAGE_LIBRARIES: Readonly<Record<string, string>> = {
   'packages/session/session-format': 'Pure Session format planning, codec dispatch, and lossless JSON library.',
   'packages/session/session-format-catalog': 'Generated build-static Session format inventory with no plugin registration.',
   'packages/session/session-format-v0-to-v1': 'Pure released-v0 codec and adjacent migration library.',
+  'packages/session/session-format-v2-to-v3': 'Pure released-v2 codec and adjacent migration library.',
   'packages/session/session-telemetry': 'Telemetry Service Definition and capture library; providers mount the backend.',
   'packages/session/session-title-llm': 'Shared LLM title-provider registration and request policy.',
   'packages/subagent/subagent-in-process-driver': 'Shared one-shot child-agent driver used by provider plugins.',
@@ -102,7 +100,7 @@ function readFrontmatter(file: string): Record<string, unknown> {
 }
 
 function packageDir(file: string): string {
-  return file.replaceAll('\\', '/').replace(/\/README\.zh\.md$/, '').replace(/\/README\.md$/, '')
+  return file.replaceAll('\\', '/').replace(/\/README\.md$/, '')
 }
 
 /** Whether the package manifest declares `dsh.bundle.patch`. */
@@ -135,11 +133,8 @@ function packageReadmeMetadataErrors(file: string, metadata: Record<string, unkn
   return errors
 }
 
-function packageReadmeStructureErrors(file: string, source: string): string[] {
-  const chinese = file.endsWith('.zh.md')
-  const required = chinese
-    ? [[/^## 概述$/m, '概述'], [/^## 目录$/m, '目录'], [/^#{2,3} 开发备注$/m, '开发备注']] as const
-    : [[/^## Summary$/m, 'Summary'], [/^## Table of Contents$/m, 'Table of Contents'], [/^#{2,3} Dev Note$/m, 'Dev Note']] as const
+function packageReadmeStructureErrors(source: string): string[] {
+  const required = [[/^## Summary$/m, 'Summary'], [/^## Table of Contents$/m, 'Table of Contents'], [/^#{2,3} Dev Note$/m, 'Dev Note']] as const
   return required.flatMap(([pattern, label]) => pattern.test(source) ? [] : [`missing ${label}`])
 }
 
@@ -168,7 +163,6 @@ describe('dsh-doc skill consolidation', () => {
   it('keeps the reference example linked from the skill', () => {
     const skill = readFileSync(resolve(root, '.agents/skills/dsh-doc/SKILL.md'), 'utf8')
     expect(skill).toContain('session-persistence-jsonl/README.md')
-    expect(skill).toContain('session-persistence-jsonl/README.zh.md')
   })
 
   it('defines controlled English as a precision-preserving review discipline', () => {
@@ -214,7 +208,7 @@ describe('dsh-doc skill consolidation', () => {
   it('keeps every package README on the summary, contents, and Dev Note skeleton', () => {
     for (const file of packageReadmes().filter(file => file.split('/').length === 4)) {
       const source = readFileSync(resolve(root, file), 'utf8')
-      expect(packageReadmeStructureErrors(file, source), file).toEqual([])
+      expect(packageReadmeStructureErrors(source), file).toEqual([])
     }
   })
 
@@ -225,7 +219,7 @@ describe('dsh-doc skill consolidation', () => {
       name: 'example',
       audience: ['developer'],
       tags: ['example'],
-      i18n: { counterpart: 'README.zh.md' },
+      i18n: { enabled: true },
     })).toEqual([
       'kind must be package-group',
       'name is redundant or has no governed consumer',
@@ -244,27 +238,10 @@ describe('dsh-doc skill consolidation', () => {
       description: 'Example package.',
       kind: 'package-reference',
       i18n: {
-        'counterpart': 'packages/example/package/README.zh.md',
-        'line-aligned': true,
+        enabled: true,
       },
     })).toEqual([
       'i18n is redundant or has no governed consumer',
     ])
-  })
-})
-
-describe('reference-example README pair', () => {
-  const dir = 'packages/session/session-persistence-jsonl'
-
-  it('keeps exact English/Chinese physical line alignment', () => {
-    const sourceLines = readFileSync(resolve(root, dir, 'README.md'), 'utf8').split('\n').length
-    const zhLines = readFileSync(resolve(root, dir, 'README.zh.md'), 'utf8').split('\n').length
-    expect(sourceLines).toBe(zhLines)
-  })
-
-  it('keeps the sidecar consistency record present', () => {
-    const sidecar = readFileSync(resolve(root, dir, 'README.i18n.yaml'), 'utf8')
-    expect(sidecar).toMatch(/^README\.md: [0-9a-f]{40}$/m)
-    expect(sidecar).toMatch(/^README\.zh\.md: [0-9a-f]{40}$/m)
   })
 })

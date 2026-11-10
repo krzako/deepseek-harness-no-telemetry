@@ -5,14 +5,18 @@
  * @module @deepseek-ai/dsh-agent-loop
  */
 
+import { createStandardImportedAgent } from './standard-import.ts'
+import type { StandardImportPreparation, ImportedAgentOptions } from '@deepseek-ai/dsh-agent'
 import { Context, FiberState, Service } from '@deepseek-ai/cordis'
 import { randomUUID } from 'node:crypto'
 import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { emitAgentEvent } from '@deepseek-ai/dsh-agent'
+import { assembleContextFor, emitAgentEvent, standardTransferSource, standardTransferTarget } from '@deepseek-ai/dsh-agent'
 import type {
   Agent,
+  AgentDriver,
+  AgentDriverRoute,
   AgentFactory,
   AgentHandle,
   AgentOptions,
@@ -24,14 +28,14 @@ import type {
 } from '@deepseek-ai/dsh-agent'
 import { errorChain, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-settings'
-import { interruptedTurnClosers, SessionLogOffset, SessionPreparation, SessionSeq } from '@deepseek-ai/dsh-session'
-import type { Session, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-system-prompt'
+import { interruptedTurnClosers, Session, SessionLogOffset, SessionPreparation, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import { SessionPersistenceNotFoundError } from '@deepseek-ai/dsh-session-persistence'
-import type { SessionHandle, SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
+import type { SessionHandle, SessionPersistence, SessionImportTransaction } from '@deepseek-ai/dsh-session-persistence'
 import { ReactLoopAgent } from './agent.ts'
 import { DEFAULT_MAX_PARALLEL_TOOL_CALLS } from './constants.ts'
 
@@ -151,12 +155,18 @@ async function raceAbort<T>(operation: PromiseLike<T> | T, signal: AbortSignal, 
   const toAbortError = (): Error => signal.reason instanceof Error
     ? signal.reason
     : new Error(`agent "${id}" creation aborted`, { cause: signal.reason })
-  if (signal.aborted) throw toAbortError()
+  // The caller may already have started an async operation before entering
+  // this helper. Even when the signal is pre-aborted, observe its rejection.
+  const pending = Promise.resolve(operation)
+  if (signal.aborted) {
+    void pending.catch(() => {})
+    throw toAbortError()
+  }
   const aborted = Promise.withResolvers<never>()
   const listener = (): void => { aborted.reject(toAbortError()) }
   signal.addEventListener('abort', listener, { once: true })
   try {
-    return await Promise.race([Promise.resolve(operation), aborted.promise])
+    return await Promise.race([pending, aborted.promise])
   } finally {
     signal.removeEventListener('abort', listener)
   }
@@ -206,14 +216,17 @@ function assertAgentOptions(options: AgentOptions): void {
 /** One session's owned write handle plus the count of events already stored through it. */
 interface StoredSession {
   readonly handle: SessionHandle
+  readonly importTransaction?: SessionImportTransaction
   storedCount: number
 }
 
 /** Prepared-but-unpublished agent resources sharing one memoized teardown. */
 interface PreparedAgent {
-  agent: ReactLoopAgent
+  agent: Agent
   /** Aborts when the factory unloads, the caller cancels, or teardown begins — ends any setup await. */
   signal: AbortSignal
+  /** Prepare the selected driver before durability and publication commit. */
+  start(source: SessionStartSource): Promise<void>
   /** Enter registries, announce, notify session-start, and start the machine. */
   publish(source: SessionStartSource): AgentHandle
   /** Reverse teardown: stop the machine, unregister, unwind the scope. Memoized. */
@@ -248,6 +261,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 export { DEFAULT_MAX_PARALLEL_TOOL_CALLS }
+export { createStandardImportedAgent } from './standard-import.ts'
 
 /**
  * One launcher-selected session identity for a configured agent. `resume`
@@ -418,6 +432,34 @@ export class AgentLoop extends Service implements AgentFactory {
     this.runtime = { ctx }
     ctx.effect(() => () => this.ownership.dispose(), 'agentLoop.transactions()')
     ctx.effect(() => ctx.agents.setFactory(this), 'agentLoop.setFactory()')
+    ctx.effect(() => ctx.agents.setTransferPorts('standard', {
+      source: standardTransferSource(async (id) => {
+        const live = ctx.sessions.get(id)
+        const persistence = ctx.get('sessionPersistence')
+        if (persistence === undefined) return live
+        if (live !== undefined) await ctx.sessions.flush(live)
+        let handle: SessionHandle
+        try {
+          handle = await persistence.open(id, 'read')
+        } catch (error: unknown) {
+          if (error instanceof SessionPersistenceNotFoundError) return live
+          throw error
+        }
+        try {
+          const events = await handle.read()
+          return Session.fromRestore(id, events, handle.header, handle.inheritedEventCount)
+        } finally {
+          await handle.close()
+        }
+      }),
+      target: { ...standardTransferTarget(async () => (await Promise.all(
+        ctx.llm.listProviders().map(async provider => (await ctx.llm.listModels(provider.id))
+          .map(model => ({ provider: model.provider, id: model.id }))),
+      )).flat(), model => ctx.llm.describeAuthentication(model.provider, model.id)),
+      createImportedAgent: (preparation: StandardImportPreparation, options?: ImportedAgentOptions) =>
+        createStandardImportedAgent(ctx, preparation, options),
+      },
+    }), 'agentLoop.transferPorts()')
     ctx.systemPrompt.variable('provider', context => context.agent?.options.provider)
     ctx.systemPrompt.variable('model', context => context.agent?.options.model)
     ctx.systemPrompt.variable('cwd', context => context.agent?.session.header.cwd)
@@ -532,6 +574,7 @@ export class AgentLoop extends Service implements AgentFactory {
     id: SessionId,
     options: AgentOptions,
     session: Session,
+    route: AgentDriverRoute,
     callerSignal?: AbortSignal,
     handle?: SessionHandle,
   ): PreparedAgent {
@@ -564,7 +607,8 @@ export class AgentLoop extends Service implements AgentFactory {
     callerSignal?.addEventListener('abort', onCallerAbort, { once: true })
     this.ownership.signal.addEventListener('abort', onFactoryTeardown, { once: true })
 
-    let machine: ReactLoopAgent | undefined
+    let machine: Agent | undefined
+    let driver: AgentDriver | undefined
     let detachSession: (() => void) | undefined
     let detachAgent: (() => void) | undefined
     let disposing: Promise<void> | undefined
@@ -585,11 +629,7 @@ export class AgentLoop extends Service implements AgentFactory {
         // sent after this point is the sender's bug — the registries are about
         // to drop the agent, so nothing should still hold it.
         if (machine === undefined) await machineReady.promise
-        if (machine !== undefined) {
-          machine.cancel({ kind: 'disposed' })
-          await machine.whenIdle()
-          await machine.scope.dispose()
-        }
+        if (driver !== undefined) await driver.dispose()
       } catch (error: unknown) {
         failures.push(error)
       }
@@ -642,13 +682,56 @@ export class AgentLoop extends Service implements AgentFactory {
       throw abort.signal.reason instanceof Error ? abort.signal.reason : new Error(String(abort.signal.reason))
     }
     try {
-      const agent = machine = new ReactLoopAgent(loopCtx, id, options, session)
+      const selected = loopCtx.agents.createDriver(loopCtx, id, options, session, route)
+      driver = selected
+      const driverId = selected?.driverId ?? 'standard'
+      if (driverId.length === 0) throw new Error('agent driver id must not be empty')
+      if (selected !== undefined && driverId === 'standard') throw new Error('agent driver id "standard" is reserved for the built-in loop')
+      const selections = session.snapshotEvents().filter(event => event.type === 'agent/driver-selected')
+      if (selections.length > 1) throw new Error(`agent "${id}" has conflicting driver selections`)
+      const selection = selections[0]
+      if (selection?.type === 'agent/driver-selected') {
+        const version: unknown = selection.data.version
+        if (version !== 1 || selection.data.driverId !== driverId) {
+          throw new Error(`agent "${id}" requires driver ${JSON.stringify(selection.data.driverId)}, got ${JSON.stringify(driverId)}`)
+        }
+      } else {
+        session.append('agent/driver-selected', { version: 1, driverId })
+      }
+      const defaultMachine = selected === undefined ? new ReactLoopAgent(loopCtx, id, options, session) : undefined
+      driver = selected ?? {
+        driverId: 'standard',
+        agent: defaultMachine as ReactLoopAgent,
+        start: async () => {},
+        dispose: async () => {
+          const agent = defaultMachine as ReactLoopAgent
+          agent.cancel({ kind: 'disposed' })
+          await agent.whenIdle()
+          await agent.scope.dispose()
+        },
+      }
+      const agent = machine = driver.agent
+      if (driverId === 'standard' && session.header.importLineage?.sourceDriverId === 'standard') {
+        const recorded = session.requestHeader()
+        if (recorded === undefined || !Object.hasOwn(recorded, 'system')) {
+          throw new Error(`imported standard Session "${id}" has no recorded system instruction`)
+        }
+        agent.ctx.systemPrompt.section({
+          name: 'portable-import:system', order: 0,
+          text: recorded.system ?? '', literal: true, complete: true,
+        })
+      }
       machineReady.resolve()
       assertLive()
 
       return {
         agent,
         signal: abort.signal,
+        start: async (source) => {
+          assertLive()
+          await driver?.start(source, abort.signal)
+          assertLive()
+        },
         publish: (source) => {
           assertLive()
           detachSession = agent.ctx.sessions.enter(session)
@@ -691,12 +774,15 @@ export class AgentLoop extends Service implements AgentFactory {
     const stored = await this.createStoredSession(preparation.session)
     let prepared: PreparedAgent
     try {
-      prepared = this.prepare(this.ctx, id, options, preparation.session, undefined, stored?.handle)
+      prepared = this.prepare(this.ctx, id, options, preparation.session, { kind: 'create' }, undefined, stored?.handle)
     } catch (error: unknown) {
       await stored?.handle.close().catch(() => {})
       throw error
     }
     try {
+      await this.appendUnstoredSuffix(stored, preparation.session)
+      if (stored !== undefined) await stored.handle.flush()
+      await prepared.start('startup')
       await this.appendUnstoredSuffix(stored, preparation.session)
       return prepared.publish('startup').agent
     } catch (error: unknown) {
@@ -720,10 +806,15 @@ export class AgentLoop extends Service implements AgentFactory {
   private async createStoredSession(session: Session, signal?: AbortSignal): Promise<StoredSession | undefined> {
     const persistence = this.runtime.ctx.get('sessionPersistence')
     if (persistence === undefined) return undefined
-    const handle = await persistence.create(session.header, {
+    const options = {
       inheritedEventCount: session.inheritedEventCount,
       ...signal === undefined ? {} : { signal },
-    })
+    }
+    if (session.header.importLineage !== undefined) {
+      const importTransaction = await persistence.beginImport(session.header, options)
+      return { handle: importTransaction.handle, importTransaction, storedCount: 0 }
+    }
+    const handle = await persistence.create(session.header, options)
     return { handle, storedCount: 0 }
   }
 
@@ -752,6 +843,9 @@ export class AgentLoop extends Service implements AgentFactory {
    * @returns the published handle.
    */
   async createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle> {
+    if ((options.route === undefined) !== (options.meta?.importLineage === undefined)) {
+      throw new Error('agent import route and Session import lineage must be supplied together')
+    }
     const preparation = SessionPreparation.create(this.runtime.ctx.sessions.prepare(options.sessionId, {
       ...options.seed === undefined ? {} : { seed: options.seed },
       ...options.meta === undefined ? {} : { meta: options.meta },
@@ -768,7 +862,12 @@ export class AgentLoop extends Service implements AgentFactory {
             () => this.createStoredSession(preparation.session, options.signal),
             options.signal,
             options.sessionId,
-            (abandoned) => { void abandoned?.handle.close().catch(() => {}) },
+            (abandoned) => {
+              const cleanup = abandoned?.importTransaction?.rollback() ?? abandoned?.handle.close()
+              void cleanup?.catch((failure: unknown) => {
+                this.ctx.logger.warn(`agent import/create cancellation cleanup failed: ${errorChain(failure)}`)
+              })
+            },
           )
       } catch (error: unknown) {
         preparation[Symbol.dispose]()
@@ -783,6 +882,7 @@ export class AgentLoop extends Service implements AgentFactory {
         options.signal,
         'startup',
         stored,
+        options.route,
       )
     })()
     this.ownership.trackWrapper(published)
@@ -799,25 +899,57 @@ export class AgentLoop extends Service implements AgentFactory {
     signal: AbortSignal | undefined,
     source: SessionStartSource,
     stored?: StoredSession,
+    requestedRoute?: Extract<AgentDriverRoute, { kind: 'import' }>,
   ): Promise<AgentHandle> {
     using ownedPreparation = preparation
     const session = ownedPreparation.session
     let prepared: PreparedAgent
     try {
-      prepared = this.prepare(ownerCtx, id, agentOptions, session, signal, stored?.handle)
+      const saved = session.snapshotEvents().find(event => event.type === 'agent/driver-selected')
+      const route: AgentDriverRoute = requestedRoute ?? (source === 'resume'
+        ? { kind: 'resume', ...(saved?.type === 'agent/driver-selected' ? { driverId: saved.data.driverId } : {}) }
+        : { kind: 'create' })
+      prepared = this.prepare(ownerCtx, id, agentOptions, session, route, signal, stored?.handle)
     } catch (error: unknown) {
-      await stored?.handle.close().catch(() => {})
+      if (stored?.importTransaction !== undefined) {
+        try { await stored.importTransaction.rollback() } catch (cleanup: unknown) {
+          throw new AggregateError([error, cleanup], 'import preparation failed and rollback failed')
+        }
+      } else await stored?.handle.close().catch(() => {})
       throw error
     }
     try {
       const setupCommit = await raceAbort(setup?.(prepared.agent.ctx), prepared.signal, id)
+      if (session.header.importLineage?.sourceDriverId === 'standard'
+        && session.snapshotEvents().some(event => event.type === 'agent/driver-selected' && event.data.driverId === 'standard')) {
+        const assembly = await raceAbort(
+          prepared.agent.ctx.systemPrompt.assemble(assembleContextFor(prepared.agent)),
+          prepared.signal, id,
+        )
+        if (renderPrompt(assembly) !== (session.requestHeader()?.system ?? '')) {
+          throw new Error(`imported standard Session "${id}" system instruction changed during setup`)
+        }
+      }
       setupCommit?.commit()
+      // The selected driver is durable before an external runtime may start work.
+      if (stored !== undefined) {
+        await this.appendUnstoredSuffix(stored, session)
+        await stored.handle.flush()
+      }
+      await raceAbort(prepared.start(source), prepared.signal, id)
       await this.appendUnstoredSuffix(stored, session)
-      return prepared.publish(source)
+      return stored?.importTransaction === undefined
+        ? prepared.publish(source)
+        : await stored.importTransaction.publish(() => prepared.publish(source))
     } catch (error: unknown) {
       // Rollback swallows a disposal rejection (a failing final handle close):
       // the setup failure is the primary error the caller must see.
-      await prepared.dispose().catch(() => {})
+      if (stored?.importTransaction !== undefined) {
+        const failures: unknown[] = [error]
+        try { await prepared.dispose() } catch (cleanup: unknown) { failures.push(cleanup) }
+        try { await stored.importTransaction.rollback() } catch (cleanup: unknown) { failures.push(cleanup) }
+        if (failures.length > 1) throw new AggregateError(failures, 'import creation failed and cleanup reported errors')
+      } else await prepared.dispose().catch(() => {})
       throw error
     }
   }

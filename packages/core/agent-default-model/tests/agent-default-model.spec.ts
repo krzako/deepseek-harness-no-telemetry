@@ -66,6 +66,27 @@ describe('AgentDefaultModelConfig', () => {
     await bench.ctx.fiber.dispose()
   })
 
+  it('stores the agent separately from equal-named provider routes', async () => {
+    const bench = await boot()
+    await bench.settingsFiber.ctx.settings.replace(AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE, {
+      agent: 'codex', provider: 'openrouter', model: 'z-ai/glm-5.3-flash',
+    })
+    expect(bench.defaultModel.currentSelection()).toEqual({
+      provider: 'codex:openrouter', model: 'openrouter/z-ai%2Fglm-5.3-flash',
+    })
+    await bench.defaultModel.saveSelection({
+      provider: 'codex:openrouter', model: 'openrouter/z-ai%2Fglm-5.3-flash',
+    })
+    expect(bench.settingsFiber.ctx.settings.get(AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE)).toMatchObject({
+      agent: 'codex', provider: 'openrouter', model: 'z-ai/glm-5.3-flash',
+    })
+    await bench.defaultModel.saveSelection({ provider: 'openrouter', model: 'z-ai/glm-5.3-flash' })
+    expect(bench.settingsFiber.ctx.settings.get(AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE)).toMatchObject({
+      agent: 'standard', provider: 'openrouter', model: 'z-ai/glm-5.3-flash',
+    })
+    await bench.ctx.fiber.dispose()
+  })
+
   it('layers a hand-written partial section over the entry', async () => {
     const bench = await boot()
     await bench.settingsFiber.ctx.settings.replace(AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE, {

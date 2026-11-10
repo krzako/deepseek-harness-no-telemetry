@@ -41,6 +41,7 @@ const DUPLICATE_SAFE_PACKAGES: readonly string[] = [
  * Runtime exports whose values remain valid when npm installs another package copy.
  */
 const SAFE_HOST_DEPENDENCY_EXPORTS = {
+  '@deepseek-ai/dsh-agent': ['isPortableAgentContextV1', 'isPrivateDriverSnapshotV1'],
   '@deepseek-ai/dsh-credentials': ['credentialKey'],
   '@deepseek-ai/dsh-deque': ['Deque'],
   '@deepseek-ai/dsh-llm': ['BlockAssembler', 'callConfigEquals', 'expandAssistantStream'],

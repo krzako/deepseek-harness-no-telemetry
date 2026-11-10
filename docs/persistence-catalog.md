@@ -88,11 +88,22 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:379`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:387`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:416`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:447`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:389`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:397`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:426`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:457`](../packages/core/session/src/types.ts)
 
 ## Events
 
 ### `agent/*`
+
+<a id="agentdriver-selected--log-only"></a>
+
+#### `agent/driver-selected` — log-only
+
+```ts persistence-catalog
+/** Immutable full-agent choice committed before the first turn. */
+'agent/driver-selected': { readonly version: 1; readonly driverId: string }
+```
+
+Source: [`packages/core/agent/src/portable-session.ts:8`](../packages/core/agent/src/portable-session.ts)
 
 <a id="agentinboxspliced--log-only"></a>
 
@@ -215,7 +226,7 @@ Source: [`packages/interaction/user-approval/src/index.ts:33`](../packages/inter
 'assistant/attempt': { turn: number; step: number; stream: AssistantStreamRecord[] }
 ```
 
-Source: [`packages/core/session/src/types.ts:313`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:323`](../packages/core/session/src/types.ts)
 
 <a id="assistantmessage--surface"></a>
 
@@ -245,7 +256,208 @@ Source: [`packages/core/session/src/types.ts:313`](../packages/core/session/src/
 
 Types: [TokenUsage](subsystems/llm-streaming.md)
 
-Source: [`packages/core/session/src/types.ts:299`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:309`](../packages/core/session/src/types.ts)
+
+### `codex/*`
+
+<a id="codexartifact-v1--log-only"></a>
+
+#### `codex/artifact-v1` — log-only
+
+```ts persistence-catalog
+/** Durable session ownership receipt for one byte-exact Codex audit artifact. */
+'codex/artifact-v1': {
+  readonly version: 1
+  readonly threadId: string
+  readonly sha256: string
+  readonly bytes: number
+  readonly mediaType: string
+  readonly name: string
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:52`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexaudit-v1--log-only"></a>
+
+#### `codex/audit-v1` — log-only
+
+```ts persistence-catalog
+/** Versioned Codex fact stream; the app-server channel supplies sequence and retry identity. */
+'codex/audit-v1': CodexAuditEventV1
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:61`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexerror--log-only"></a>
+
+#### `codex/error` — log-only
+
+```ts persistence-catalog
+/** Records a safe app-server failure summary for replay and diagnostics. */
+'codex/error': {
+  readonly version: 1
+  readonly turn: number
+  readonly stage: 'thread' | 'turn-start' | 'turn' | 'interaction' | 'transport'
+  readonly message: string
+  readonly code?: string
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:135`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexitemcompleted--log-only"></a>
+
+#### `codex/item/completed` — log-only
+
+```ts persistence-catalog
+/** Records the terminal structured snapshot of one native Codex item. */
+'codex/item/completed': {
+  readonly version: 1
+  readonly turn: number
+  readonly codexTurnId: CodexTurnId
+  readonly itemId: string
+  readonly itemType: string
+  readonly item: JsonValue
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:116`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexitemstarted--log-only"></a>
+
+#### `codex/item/started` — log-only
+
+```ts persistence-catalog
+/** Records the initial structured snapshot of one native Codex item. */
+'codex/item/started': {
+  readonly version: 1
+  readonly turn: number
+  readonly codexTurnId: CodexTurnId
+  readonly itemId: string
+  readonly itemType: string
+  readonly item: JsonValue
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:98`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexitemupdated--log-only"></a>
+
+#### `codex/item/updated` — log-only
+
+```ts persistence-catalog
+/** Records a later complete snapshot of an in-progress native Codex item. */
+'codex/item/updated': {
+  readonly version: 1
+  readonly turn: number
+  readonly codexTurnId: CodexTurnId
+  readonly itemId: string
+  readonly itemType: string
+  readonly item: JsonValue
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:107`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexmodel-audit--log-only"></a>
+
+#### `codex/model-audit` — log-only
+
+```ts persistence-catalog
+/** Full Codex/model transport facts, flushed before dispatch or downstream delivery. */
+'codex/model-audit': {
+  readonly version: 1
+  readonly turn: number
+  readonly attemptId: string
+  readonly purpose: 'inference' | 'compaction'
+  readonly phase: 'original-request' | 'upstream-request' | 'upstream-response' | 'upstream-chunk' | 'upstream-end' | 'result' | 'failure'
+  readonly payload: JsonValue
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:89`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexthread-bound--log-only"></a>
+
+#### `codex/thread-bound` — log-only
+
+```ts persistence-catalog
+/** Commits the one persistent Codex thread owned by this DSH session. */
+'codex/thread-bound': CodexThreadBinding
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:81`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codextool-call-bound--log-only"></a>
+
+#### `codex/tool-call-bound` — log-only
+
+```ts persistence-catalog
+/** Correlates one validated native call with a stable DSH tool-call identity. */
+'codex/tool-call-bound': {
+  readonly version: 1
+  readonly turn: number
+  readonly codexTurnId: CodexTurnId
+  readonly codexCallId: string
+  readonly dshCallId: string
+  readonly catalogHash: string
+  readonly name: string
+  readonly arguments: JsonValue
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:70`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codextool-catalog--log-only"></a>
+
+#### `codex/tool-catalog` — log-only
+
+```ts persistence-catalog
+/** Exact deterministic tool catalog supplied to Codex before this turn starts. */
+'codex/tool-catalog': {
+  readonly version: 1
+  readonly turn: number
+  readonly hash: string
+  readonly tools: JsonValue
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:63`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexturn-bound--log-only"></a>
+
+#### `codex/turn-bound` — log-only
+
+```ts persistence-catalog
+/** Associates one DSH turn with the app-server turn that executes it. */
+'codex/turn-bound': {
+  readonly version: 1
+  readonly turn: number
+  readonly codexTurnId: CodexTurnId
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:83`](../packages/core/agent-codex/src/types.ts)
+
+<a id="codexusage--log-only"></a>
+
+#### `codex/usage` — log-only
+
+```ts persistence-catalog
+/** Records provider token accounting without making it model history. */
+'codex/usage': {
+  readonly version: 1
+  readonly turn: number
+  readonly inputTokens: number
+  readonly cachedInputTokens: number
+  readonly cacheWriteInputTokens: number
+  readonly outputTokens: number
+  readonly reasoningOutputTokens: number
+}
+```
+
+Source: [`packages/core/agent-codex/src/types.ts:125`](../packages/core/agent-codex/src/types.ts)
 
 ### `command/*`
 
@@ -571,7 +783,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:46`](../packages/plan/plan-mode/s
 'request/context': RequestContext
 ```
 
-Source: [`packages/core/session/src/types.ts:352`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:362`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -590,7 +802,7 @@ Source: [`packages/core/session/src/types.ts:352`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:342`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:352`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -665,7 +877,7 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 'session/end-seed': { inherited?: true }
 ```
 
-Source: [`packages/core/session/src/types.ts:375`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:385`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -727,7 +939,7 @@ Source: [`packages/session/session-log-deepseek/src/types.ts:59`](../packages/se
 'step/end': { turn: number; step: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:280`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:290`](../packages/core/session/src/types.ts)
 
 <a id="stepstart--log-only"></a>
 
@@ -738,7 +950,7 @@ Source: [`packages/core/session/src/types.ts:280`](../packages/core/session/src/
 'step/start': { turn: number; step: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:278`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:288`](../packages/core/session/src/types.ts)
 
 ### `subagent/*`
 
@@ -869,7 +1081,7 @@ Source: [`packages/todo/tool-todo/src/types.ts:31`](../packages/todo/tool-todo/s
 
 Types: [ToolCallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:319`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:329`](../packages/core/session/src/types.ts)
 
 <a id="toolcode-dispatch--log-only"></a>
 
@@ -944,7 +1156,7 @@ Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:331`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:341`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 
@@ -1024,7 +1236,7 @@ Source: [`packages/workflow/tool-workflow/src/types.ts:47`](../packages/workflow
 
 Types: [TurnEndReason](subsystems/session.md)
 
-Source: [`packages/core/session/src/types.ts:276`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:286`](../packages/core/session/src/types.ts)
 
 <a id="turnstart--log-only"></a>
 
@@ -1040,7 +1252,7 @@ Source: [`packages/core/session/src/types.ts:276`](../packages/core/session/src/
 'turn/start': { turn: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:267`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:277`](../packages/core/session/src/types.ts)
 
 ### `user/*`
 
@@ -1059,4 +1271,4 @@ Source: [`packages/core/session/src/types.ts:267`](../packages/core/session/src/
 'user/message': UserMessage
 ```
 
-Source: [`packages/core/session/src/types.ts:288`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:298`](../packages/core/session/src/types.ts)

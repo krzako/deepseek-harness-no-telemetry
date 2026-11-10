@@ -7,6 +7,7 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type {} from '@deepseek-ai/dsh-agent-codex/types'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: the 'conversation.view' SlotMap row (declared by the slot's
@@ -17,6 +18,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { createTrajectoryDurationStore } from './duration-store.ts'
 import { en, NS, zh } from './locales.ts'
 import { registerTrajectoryAssistantDefinition } from './trajectory-assistant-definition.ts'
+import { registerTrajectoryCodexAuditDefinition } from './trajectory-codex-audit-definition.ts'
 import { registerTrajectoryCompactionDefinitions } from './trajectory-compaction-definition.ts'
 import { registerTrajectoryMessageDefinitions } from './trajectory-message-definitions.ts'
 import { registerTrajectoryRequestHeaderDefinition } from './trajectory-request-header-definition.ts'
@@ -69,6 +71,7 @@ export function apply(ctx: Context): void {
   registerTrajectoryAssistantDefinition(ctx)
   registerTrajectoryToolDefinition(ctx)
   registerTrajectoryCompactionDefinitions(ctx)
+  registerTrajectoryCodexAuditDefinition(ctx)
   registerTrajectoryConversationView(ctx)
   ctx.uiSession.provide({
     hooks: ['trajectory'],
@@ -100,6 +103,7 @@ export function apply(ctx: Context): void {
           (attachment: ImageAttachmentRef) => ctx.uiConversation.imageUrl(sessionId, attachment),
           { peek: (attachment: ImageAttachmentRef) => ctx.uiConversation.peekImageUrl(sessionId, attachment) },
         ),
+        loadAuditArtifact: (eventId, sha256) => session.readAuditArtifact(eventId, sha256),
         setActualDuration: (value) => { duration.set(value) },
       }
     },

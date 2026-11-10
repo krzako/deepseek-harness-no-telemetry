@@ -1,0 +1,23 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false
+  },
+  "include": [
+    "./**/*.ts"
+  ],
+  "references": [
+    {
+      "path": ".."
+    },
+    {
+      "path": "../../../boot/app-boot"
+    },
+    {
+      "path": "../../../test-support/loader-smoke"
+    }
+  ]
+}

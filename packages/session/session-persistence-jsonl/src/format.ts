@@ -72,7 +72,7 @@ export function parseGenerationLogFilename(
 }
 
 /**
- * The current v2 physical header stored as the first JSONL record. The exact
+ * The current v3 physical header stored as the first JSONL record. The exact
  * inherited cut lives on the last tagged `session/end-seed` event.
  */
 interface HeaderLine {
@@ -82,6 +82,7 @@ interface HeaderLine {
   createdAt: number
   cwd?: string
   parentSession?: SessionId
+  importLineage?: SessionHeader['importLineage']
   isSeeded: boolean
   origin?: 'subagent'
   delegationDepth: number
@@ -89,7 +90,7 @@ interface HeaderLine {
 }
 
 const HEADER_REQUIRED_KEYS = ['type', 'version', 'id', 'createdAt', 'isSeeded', 'delegationDepth'] as const
-const HEADER_OPTIONAL_KEYS = ['cwd', 'parentSession', 'origin', 'agentPreset'] as const
+const HEADER_OPTIONAL_KEYS = ['cwd', 'parentSession', 'importLineage', 'origin', 'agentPreset'] as const
 const HEADER_KEYS = new Set<string>([...HEADER_REQUIRED_KEYS, ...HEADER_OPTIONAL_KEYS])
 
 /**
@@ -129,6 +130,7 @@ export function toHeaderLine(
     createdAt: header.createdAt,
     ...header.cwd !== undefined ? { cwd: header.cwd } : {},
     ...header.parentSession !== undefined ? { parentSession: header.parentSession } : {},
+    ...header.importLineage !== undefined ? { importLineage: header.importLineage } : {},
     isSeeded: header.isSeeded,
     ...header.origin !== undefined ? { origin: header.origin } : {},
     delegationDepth: header.delegationDepth ?? 0,
@@ -149,6 +151,7 @@ function fromHeaderLine(line: HeaderLine): SessionStorageMetadata {
       createdAt: line.createdAt,
       ...line.cwd !== undefined ? { cwd: line.cwd } : {},
       ...line.parentSession !== undefined ? { parentSession: line.parentSession } : {},
+      ...line.importLineage !== undefined ? { importLineage: line.importLineage } : {},
       isSeeded: line.isSeeded,
       ...line.origin !== undefined ? { origin: line.origin } : {},
       delegationDepth: line.delegationDepth,
@@ -180,12 +183,28 @@ function isHeaderLine(value: unknown): value is HeaderLine {
         && isAbsolute((value as { cwd: string }).cwd)))
     && ((value as { parentSession?: unknown }).parentSession === undefined
       || typeof (value as { parentSession?: unknown }).parentSession === 'string')
+    && ((value as { importLineage?: unknown }).importLineage === undefined
+      || isImportLineage((value as { importLineage?: unknown }).importLineage,
+        (value as { id: SessionId }).id,
+        (value as { parentSession?: SessionId }).parentSession,
+        (value as { isSeeded?: boolean }).isSeeded))
     && typeof (value as { isSeeded?: unknown }).isSeeded === 'boolean'
     && ((value as { origin?: unknown }).origin === undefined
       || (value as { origin?: unknown }).origin === 'subagent')
     && ((value as { agentPreset?: unknown }).agentPreset === undefined
       || typeof (value as { agentPreset?: unknown }).agentPreset === 'string')
   )
+}
+
+function isImportLineage(value: unknown, id: SessionId, parentSession: SessionId | undefined, isSeeded: boolean | undefined): value is NonNullable<SessionHeader['importLineage']> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const fields = value as Record<string, unknown>
+  return Object.keys(fields).length === 3
+    && typeof fields['sourceSessionId'] === 'string' && fields['sourceSessionId'].length > 0
+    && fields['sourceSessionId'] !== id
+    && typeof fields['sourceDriverId'] === 'string' && fields['sourceDriverId'].length > 0
+    && typeof fields['importId'] === 'string' && fields['importId'].length > 0
+    && parentSession === undefined && isSeeded === false
 }
 
 /**
@@ -308,7 +327,7 @@ export function logPath(
 }
 
 /**
- * Serialize a v2 event batch as JSONL lines (no trailing newline). Compact
+ * Serialize a current event batch as JSONL lines (no trailing newline). Compact
  * Assistant streams are nested event data; every event occupies one row.
  * @param events - the batch to serialize, in log order.
  * @returns the batch's JSONL text; the writer adds the final newline.
@@ -355,17 +374,17 @@ interface SessionLogScan {
   committedBytes: number
 }
 
-/** Derive the v2 fork cut from the last lineage-tagged seed marker. */
+/** Derive the fork cut from the last lineage-tagged seed marker. */
 function inheritedCut(meta: SessionHeader, events: readonly SessionEvent[]): SessionLogOffsetType {
   let cut: SessionLogOffsetType | undefined
   for (const event of events) {
     if (event.type === 'session/end-seed' && event.data.inherited === true) cut = SessionLogOffset(event.seq)
   }
   if (meta.isSeeded && cut === undefined) {
-    throw new Error('corrupt session log: seeded v2 header lacks an inherited end-seed marker')
+    throw new Error('corrupt session log: seeded header lacks an inherited end-seed marker')
   }
   if (!meta.isSeeded && cut !== undefined) {
-    throw new Error('corrupt session log: unseeded v2 header contains an inherited end-seed marker')
+    throw new Error('corrupt session log: unseeded header contains an inherited end-seed marker')
   }
   return cut ?? SessionLogOffset(0)
 }

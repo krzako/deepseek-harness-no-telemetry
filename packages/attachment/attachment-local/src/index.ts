@@ -18,7 +18,7 @@ import type {
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { NormalizationPolicy } from './normalization.ts'
 import { CompressionLimiter, compressionFailure } from './compression-limiter.ts'
-import { commitPreparedImageFile, normalizedImagePath, prepareImageFile, readImageFile, validateImageFile } from './store.ts'
+import { commitPreparedImageFile, normalizedImagePath, prepareImageFile, readImageFile, restoreImageFile, validateImageFile } from './store.ts'
 import {
   readFileStreamVerbatim, saveFileStreamVerbatim, saveFileVerbatim, storedFilePath,
 } from './file-store.ts'
@@ -26,7 +26,7 @@ import { readRequestImageFile, requestImageVariantId } from './request-image.ts'
 
 export { canPassThroughNormalization, normalizeImage } from './normalization.ts'
 export type { NormalizedImage, NormalizationPolicy } from './normalization.ts'
-export { commitPreparedImageFile, prepareImageFile, readImageFile, saveImageFile, validateImageFile } from './store.ts'
+export { commitPreparedImageFile, prepareImageFile, readImageFile, restoreImageFile, saveImageFile, validateImageFile } from './store.ts'
 export type { PreparedImageFile } from './store.ts'
 export { readRequestImageFile, requestImageVariantId } from './request-image.ts'
 
@@ -216,6 +216,10 @@ export class LocalAttachmentStore extends AttachmentStore {
       () => prepareImageFile(input, this.imageLimits, this.normalizationPolicy),
     )
     return commitPreparedImageFile(this.root, prepared)
+  }
+
+  override restoreImage(input: StoredImageAttachment, signal?: AbortSignal): Promise<ImageAttachmentRef> {
+    return this.compression.run(() => restoreImageFile(this.root, input, this.imageLimits, signal))
   }
 
   async readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment> {

@@ -1,0 +1,38 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false
+  },
+  "include": [
+    "./**/*.ts"
+  ],
+  "references": [
+    {
+      "path": ".."
+    },
+    {
+      "path": "../../../../vendor/loader"
+    },
+    {
+      "path": "../../../../vendor/include"
+    },
+    {
+      "path": "../../../settings/settings-file"
+    },
+    {
+      "path": "../../../credentials/credentials-local"
+    },
+    {
+      "path": "../../../core/agent"
+    },
+    {
+      "path": "../../../session/session-log-deepseek"
+    },
+    {
+      "path": "../../plugin-package-inventory-deepseek"
+    }
+  ]
+}

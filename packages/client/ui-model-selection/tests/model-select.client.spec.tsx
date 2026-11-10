@@ -53,6 +53,16 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
 afterEach(cleanup)
 
 describe('ModelSelect reasoning effort', () => {
+  it('prefixes a selected Codex model without renaming ordinary models', () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state({
+      current: { provider: 'codex:openrouter', model: 'openrouter/z-ai%2Fglm-5.3-flash' },
+      groups: [{ id: 'codex:openrouter', name: 'Codex: openrouter', models: [
+        { id: 'openrouter/z-ai%2Fglm-5.3-flash', name: 'Codex: GLM 5.3 Flash' },
+      ] }],
+    }))
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
+    expect(screen.getByRole('button', { name: '选择模型，当前 Codex: GLM 5.3 Flash' })).toBeTruthy()
+  })
   it('renders effort names without descriptions and submits the effort as part of the session selection', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())
     const select = vi.fn(async (selection: ModelSelection) => {

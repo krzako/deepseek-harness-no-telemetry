@@ -98,6 +98,14 @@ export interface ISession {
     attachmentId: AttachmentIdType,
   ): Promise<RemoteResult<{ attachment: ImageAttachmentRef; data: Uint8Array }>>
   /**
+   * Resolve one Codex audit artifact referenced by an event in this Session.
+   * @param eventId - durable fact naming the payload.
+   * @param sha256 - digest in the fact's artifact reference.
+   * @param signal - optional cancellation before complete verification.
+   * @returns complete UTF-8 text only after the host finishes verification.
+   */
+  readAuditArtifact(eventId: string, sha256: string, signal?: AbortSignal): Promise<string>
+  /**
    * Apply one edit, remove, or strict steer action to a still-pending queue occurrence.
    * @param itemId - agent-owned inbox occurrence identity.
    * @param action - requested queue operation.

@@ -9,16 +9,20 @@ import { Context } from '@deepseek-ai/cordis'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 
-const [root, sessionId] = process.argv.slice(2)
+const [root, sessionId, mode] = process.argv.slice(2)
 const ctx = new Context()
 await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
-const handle = await ctx.sessionPersistence.create({
+const header = {
   version: SESSION_FORMAT_VERSION,
   id: sessionId,
   createdAt: 1000,
   cwd: '/work',
   isSeeded: false,
-})
+  ...(mode === 'pending-import' ? { importLineage: { sourceSessionId: 'source', sourceDriverId: 'standard', importId: 'crash-import' } } : {}),
+}
+const handle = mode === 'pending-import'
+  ? (await ctx.sessionPersistence.beginImport(header)).handle
+  : await ctx.sessionPersistence.create(header)
 await handle.append([
   { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
   { type: 'turn/end', seq: 1, time: 2, data: { turn: 1, reason: { kind: 'completed' } } },

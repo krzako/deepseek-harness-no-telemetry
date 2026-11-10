@@ -156,6 +156,24 @@ export abstract class AttachmentStore extends Service {
    */
   abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 
+  /** Restore archived image bytes and their reference without normalization.
+   * Providers must verify digest, byte count, declared metadata and full decode
+   * before durable publication; configured admission limits may reject explicitly.
+   * This does not append Session history or replay historical work.
+   * @param input - exact archived bytes and original durable reference.
+   * @param signal - cancellation before the provider begins atomic publication.
+   * @returns the unchanged durable reference after successful publication.
+   */
+  restoreImage(input: StoredImageAttachment, signal?: AbortSignal): Promise<ImageAttachmentRef> {
+    signal?.throwIfAborted()
+    void input
+    return Promise.reject(new AttachmentError(
+      'The mounted attachment provider cannot restore exact archived images.',
+      'ATTACHMENT_RESTORE_UNSUPPORTED',
+    ))
+  }
+
+
   /**
    * Read one image and verify that bytes still match the recorded reference.
    * @param ref - durable reference from the session log.

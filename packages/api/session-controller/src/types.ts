@@ -329,6 +329,18 @@ export interface SessionAttachmentValue {
   readonly data: string
 }
 
+/** Session-owned Codex audit payload address; neither field is a bearer token. */
+export interface SessionAuditArtifactRequest {
+  readonly sessionId: SessionId
+  readonly eventId: string
+  readonly sha256: string
+}
+
+/** Base64 chunk of a verified-on-completion audit artifact stream. */
+export interface SessionAuditArtifactChunk {
+  readonly data: string
+}
+
 /** Pending queue mutation request. */
 export interface SessionUpdateQueueRequest {
   readonly sessionId: SessionId

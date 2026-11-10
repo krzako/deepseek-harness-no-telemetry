@@ -133,13 +133,13 @@ describe('ui-settings-plugins apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     expect(slots.entries('settings.plugin.item').map(entry => entry.options.key))
-      .toEqual(['shell', 'agent-loop', 'web-search', 'web-search-searxng', 'subagent-model-selection'])
+      .toEqual(['shell', 'agent-loop', 'codex', 'web-search', 'web-search-searxng', 'subagent-model-selection'])
   })
 
   it('dispatches the served namespaces its cards claim, and no others', async () => {
     // ui-theme is served but belongs to another surface, and a deployment
     // composing no PowerShell/POSIX executor serves no `bash` at all.
-    const { ctx, slots } = await bench(['agent-loop', 'ui-theme'])
+    const { ctx, slots } = await bench(['agent-loop', 'codex', 'ui-theme'])
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
 
@@ -147,7 +147,7 @@ describe('ui-settings-plugins apply', () => {
     const face = (tab.inject as unknown as () => ConfigurablePluginsTabFace)()
     await vi.waitFor(() => {
       expect(face.hooks.configurablePlugins.getSnapshot().namespaces)
-        .toEqual(['agent-loop'])
+        .toEqual(['agent-loop', 'codex'])
     })
   })
 
@@ -209,7 +209,7 @@ describe('ui-settings-plugins apply', () => {
     declareRoot(slots)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(slots.entries('settings.plugin.item')).toHaveLength(5)
+    expect(slots.entries('settings.plugin.item')).toHaveLength(6)
 
     await fiber.dispose()
 

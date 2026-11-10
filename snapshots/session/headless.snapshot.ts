@@ -19,6 +19,7 @@ import {
   latestPersistedSessionPaths,
   materializeProfilePatch,
   normalizeSessionSnapshots,
+  projectPreDriverSelectionSnapshot,
   normalizedHeaders,
   normalizedSystemPrompts,
   normalizedToolSchemas,
@@ -45,7 +46,7 @@ import {
 } from '@deepseek-ai/dsh-session-snapshot'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
-import { parseSessionLog, prepareSessionSnapshotFixtureForComparison } from '@deepseek-ai/dsh-llm-replay'
+import { prepareSessionSnapshotFixtureForComparison } from '@deepseek-ai/dsh-llm-replay'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const snapshotsRoot = fileURLToPath(new URL('./', import.meta.url))
@@ -635,42 +636,13 @@ describe('headless recorded-session snapshots', () => {
     })
     expect([...new Set(rowTypes)].sort()).toStrictEqual(['reasoning-chunks', 'text-chunks', 'tool-call-chunks'])
 
-    const withoutVolatileMessage = (event: unknown): unknown => {
-      const cloned = structuredClone(event) as {
-        time?: unknown
-        type?: unknown
-        data?: {
-          durationMs?: unknown
-          id?: unknown
-          inserted?: Array<{ id?: unknown }>
-          message?: { id?: unknown }
-          stream?: Array<{ time?: number; time0?: number; dt?: number[] }>
-        }
-      }
-      delete cloned.time
-      if (cloned.type === 'agent/inbox/spliced') {
-        for (const message of cloned.data?.inserted ?? []) delete message.id
-      }
-      if (cloned.type === 'user/message') delete cloned.data?.id
-      if (cloned.type === 'assistant/message' || cloned.type === 'tool/result') delete cloned.data?.message?.id
-      if (cloned.type === 'assistant/message' || cloned.type === 'assistant/attempt') {
-        for (const record of cloned.data?.stream ?? []) {
-          if (record.time !== undefined) record.time = 0
-          if (record.time0 !== undefined) record.time0 = 0
-          if (record.dt !== undefined) record.dt = record.dt.map(() => 0)
-        }
-      }
-      if (cloned.type === 'hook/result') delete cloned.data?.durationMs
-      return cloned
-    }
-    const logical = (fixture: string): unknown[] => {
-      const current = prepareSessionSnapshotFixtureForComparison(fixture)
-      return [
-        records(current)[0],
-        ...parseSessionLog(current).map(withoutVolatileMessage),
-      ]
-    }
-    expect(logical(packed)).toStrictEqual(logical(source))
+    // The unpacked current-writer fixture includes durable driver selection;
+    // the pinned packed generation predates it and remains immutable.
+    const comparableSource = projectPreDriverSelectionSnapshot(
+      normalizeSessionSnapshots([source], contextOf([source]))[0] as string,
+    )
+    const comparablePacked = normalizeSessionSnapshots([packed], contextOf([packed]))[0]
+    expect(comparableSource).toBe(comparablePacked)
   })
 
   it('reconstructs reasoning stderr across packed output boundaries', () => {
@@ -921,8 +893,11 @@ describe('headless recorded-session snapshots', () => {
       const fixtureContext = contextOf(fixtures)
       const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext)
       const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureContext)
+      const historicalWithoutDriver = scenario.manifest.sessionFormat !== undefined
+        && scenario.manifest.sessionFormat.version < 2
       for (const [index, actual] of actualSnapshots.entries()) {
-        expect(actual, `${scenario.name}: session ${index}`).toBe(expectedSnapshots[index])
+        expect(historicalWithoutDriver ? projectPreDriverSelectionSnapshot(actual) : actual,
+          `${scenario.name}: session ${index}`).toBe(expectedSnapshots[index])
       }
       await verifyHeaders(scenario, actualLogs, actualContext)
 

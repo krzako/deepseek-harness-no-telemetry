@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-session
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-session` provides the append-only session log that records an agent's whole interaction history — the single source of truth every model-visible fact flows through. The LLM message history is *derived* from the log (`deriveMessages()`), never stored separately, so replay is re-derivation from the same events and compaction can shadow older surface entries without deleting history. The package also provides the in-memory store (`ctx.sessions`), the typed `SessionEvent` vocabulary that plugins extend by declaration merging, and the surface layer that orders message-producing events. Persistence is deliberately a separate concern: backends subscribe to `session/event` and flush on `session/flush`. Choose it as the foundation of any agent session; it runs no model calls itself.
@@ -56,6 +54,8 @@ Surface events (`user/message`, `assistant/message`, `tool/result`) must declare
 Session log positions use two numeric types. `SessionSeq` identifies an existing event or inclusive event watermark; `SessionLogOffset` identifies a gap, prefix length, or read boundary and may equal the event count. `SessionSeqCursor` adds the `-1` “no event yet” value, while `OptionalSessionSeq` uses `null` when absence is data. The constructors validate non-negative safe integers, and the brands disappear at runtime, so durable JSON and wire values remain ordinary numbers.
 
 ### Fork a session
+
+An imported Session uses `meta.importLineage` (`sourceSessionId`, `sourceDriverId`, `importId`) rather than fork metadata. The header preserves this ancestry across persistence and resume; the import source cannot be the new Session itself, and import ancestry cannot be combined with `parentSession` or `isSeeded`.
 
 `ctx.sessions.fork(source, boundary?, childSessionId?)` selects source events through an inclusive `boundary` seq (default: the current last event), requires the prefix to end outside an open turn, and creates a live child session with lineage metadata. A tool-time delegation that must branch mid-turn clips to a completed prefix instead.
 

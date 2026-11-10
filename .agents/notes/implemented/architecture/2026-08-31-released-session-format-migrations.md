@@ -2,8 +2,6 @@
 
 Status: implemented
 
-English | [中文](2026-08-31-released-session-format-migrations.zh.md)
-
 ## Problem
 
 Session format v0 shipped in an alpha release, so a structural writer change can no longer treat existing JSONL as disposable pre-release state. Stored event bodies reach consumers through read or write `SessionHandle` instances used by resume, query, export, fork, and continuation paths. Migrating only one consumer would let callers observe different logical generations or fail only when a later writer reaches the old file.

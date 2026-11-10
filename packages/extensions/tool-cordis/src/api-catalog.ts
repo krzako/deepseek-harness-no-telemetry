@@ -289,6 +289,54 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the disposer that clears the factory slot. The exact Cordis effect disposer (single-shot): composite (generator) effects may yield it directly — exact identity nests the teardown in order.',
       },
       {
+        signature: 'setDriverFactory(provider: string, factory: AgentDriverFactory): () => void',
+        description: 'Register one exact `AgentOptions.provider` route as a full turn driver. The driver must register matching canonical source and target ports first.',
+        parameters: [{ name: 'provider', description: 'exact provider selector carried by AgentOptions.' }, { name: 'factory', description: 'driver constructor for that route.' }],
+        returns: 'effect-scoped disposer that removes this exact registration.',
+      },
+      {
+        signature: 'setTransferPorts<Result>(driverId: string, ports: AgentTransferPorts<Result>): () => void',
+        description: 'Register both canonical transfer directions for one full-agent driver. The registration follows the caller\'s effect lifetime; driver selection and transfer lookup use the same stable driver id, not provider names.',
+        parameters: [{ name: 'driverId', description: 'stable full-agent driver identity.' }, { name: 'ports', description: 'matching source and target ports for the shared DSH format.' }],
+        returns: 'effect-scoped disposer for this exact registration.',
+      },
+      {
+        signature: 'getTransferPorts(driverId: string): AgentTransferPorts',
+        description: 'Resolve both directions for a full-agent driver before transfer preview.',
+        parameters: [{ name: 'driverId', description: 'recorded or explicitly selected driver identity.' }],
+        returns: 'registered canonical transfer ports.',
+      },
+      {
+        signature: 'setDriverSelector(selector: AgentDriverSelector): () => void',
+        description: 'Register the one policy that may select a full driver for an ordinary provider route. The driver\'s canonical source and target ports must already be registered.',
+        parameters: [{ name: 'selector', description: 'decision invoked after exact driver routes and before the ordinary loop.' }],
+        returns: 'the effect-scoped disposer that removes this policy.',
+      },
+      {
+        signature: 'hasDriverFactory(provider: string): boolean',
+        description: 'Whether a full-agent driver owns this exact provider route.',
+        parameters: [{ name: 'provider', description: 'exact provider route to check.' }],
+        returns: 'true when a full-agent driver is registered for the route.',
+      },
+      {
+        signature: 'listDriverCatalogs(): readonly (AgentDriverCatalog & { readonly id: string })[]',
+        description: 'Detached selector metadata for registered full-agent routes.',
+        parameters: [],
+        returns: 'catalogs whose nested model metadata can be read without mutating registrations.',
+      },
+      {
+        signature: 'resolveDriverModel(provider: string, model: string): AgentDriverCatalog[\'models\'][number] | undefined',
+        description: 'Resolve one advertised full-agent model, returning undefined for an LLM route.',
+        parameters: [{ name: 'provider', description: 'exact full-agent provider route.' }, { name: 'model', description: 'advertised model ID for that route.' }],
+        returns: 'the model metadata, or undefined when the provider belongs to the ordinary LLM loop.',
+      },
+      {
+        signature: 'createDriver(ctx: Context, id: SessionId, options: AgentOptions, session: import(\'@deepseek-ai/dsh-session\').Session, route: AgentDriverRoute = { kind: \'create\' }): AgentDriver | undefined',
+        description: 'Create the selected alternative driver, or return undefined for the default React loop.',
+        parameters: [{ name: 'ctx', description: 'lifecycle context supplied to the driver.' }, { name: 'id', description: 'shared Agent and Session identity.' }, { name: 'options', description: 'provider selection and driver options.' }, { name: 'session', description: 'prepared, unpublished Session owned by the lifecycle factory.' }, { name: 'route', description: 'current-policy creation, persisted resume, or explicit import target.' }],
+        returns: 'the selected driver, or undefined when the default loop owns the route.',
+      },
+      {
         signature: 'async create(options: CreateAgentOptions): Promise<AgentHandle>',
         description: 'Create and publish a new agent through the registered factory. Distinct from register (which records an already-constructed agent): this constructs the agent and its session. Rejects if no factory is registered or creation/setup fails. The resolved AgentHandle lets the owner tear down exactly this agent.',
         parameters: [{ name: 'options', description: 'shared identity, session seed/metadata, and agent options.' }],
@@ -507,6 +555,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Validate and durably commit one image before its owning session event is appended. The returned reference describes the persisted normalized image. When normalization reduces the raster, its `originalDimensions` records the orientation-applied input dimensions.',
         parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
         returns: 'the durable content-addressed normalized image reference.',
+      },
+      {
+        signature: 'restoreImage(input: StoredImageAttachment, signal?: AbortSignal): Promise<ImageAttachmentRef>',
+        description: 'Restore archived image bytes and their reference without normalization. Providers must verify digest, byte count, declared metadata and full decode before durable publication; configured admission limits may reject explicitly. This does not append Session history or replay historical work.',
+        parameters: [{ name: 'input', description: 'exact archived bytes and original durable reference.' }, { name: 'signal', description: 'cancellation before the provider begins atomic publication.' }],
+        returns: 'the unchanged durable reference after successful publication.',
       },
       {
         signature: 'abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>',
@@ -804,25 +858,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Remove one reference from a configuration surface.',
         parameters: [{ name: 'ref', description: 'reference name to remove.' }],
         throws: ['RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.'],
-      },
-    ],
-  },
-  {
-    key: 'deepseekLlmApiExtensions',
-    summary: 'Registry of independently owned top-level fields for official DeepSeek requests.',
-    description: 'Registry of independently owned top-level fields for official DeepSeek requests.',
-    methods: [
-      {
-        signature: 'register<K extends keyof DeepSeekLlmApiExtensionMap>( field: K, provider: DeepSeekLlmApiExtensionProvider<DeepSeekLlmApiExtensionMap[K]>, ): () => Promise<void>',
-        description: 'Register the sole provider of one top-level request field. Registration is effect-scoped.',
-        parameters: [{ name: 'field', description: 'declaration-merged field owned by the provider.' }, { name: 'provider', description: 'request-time field preparation and optional acceptance behavior.' }],
-        returns: 'disposer that releases the field.',
-      },
-      {
-        signature: 'async prepare(request: DeepSeekLlmApiExtensionRequest): Promise<PreparedDeepSeekLlmApiExtensions>',
-        description: 'Prepare every currently registered field from one immutable base request. Preparation failures reject before HTTP dispatch. Field values are cloned and frozen; providers retain no mutable alias to the outgoing request.',
-        parameters: [{ name: 'request', description: 'exact serialized request facts before extension fields.' }],
-        returns: 'detached fields and their idempotent joint acceptance transaction.',
       },
     ],
   },
@@ -1278,6 +1313,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a prepared config and its registration-bound stream entry point.',
       },
       {
+        signature: 'async describeAuthentication(provider: string, model: string): Promise<LlmAuthenticationInfo>',
+        description: 'Read route-owned authentication metadata without requesting a model or returning secrets. This does not prove credential validity or provider-managed login readiness.',
+        parameters: [{ name: 'provider', description: 'registered provider route.' }, { name: 'model', description: 'selected model id.' }],
+        returns: 'detached local presence facts; missing routes reject.',
+      },
+      {
         signature: 'stream(options: GenerateOptions): AsyncIterable<StreamChunk>',
         description: 'Stream one model call as raw chunks (token-level deltas). Replay state is retained only when the same adapter instance owns its historical provider and the target provider. Final adapter selection remains fixed through asynchronous exact-model resolution and dispatch. Adapter selection, dispatch, and iteration failures become terminal `error` or `aborted` finish chunks; middleware, nested-call, cleanup, and consumer failures remain thrown.',
         parameters: [{ name: 'options', description: 'the full request; `options.provider` selects the adapter.' }],
@@ -1513,6 +1554,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the durable attachment reference and base64-encoded bytes.',
       },
       {
+        signature: '@Remote({ mode: \'stream\' }) auditArtifact(request: SessionAuditArtifactRequest, signal: AbortSignal): AsyncIterable<SessionAuditArtifactChunk>',
+        description: 'Stream an audit artifact only when this Session owns its fact and receipt.',
+        parameters: [{ name: 'request', description: 'Session, fact, and digest identifying the payload.' }, { name: 'signal', description: 'caller cancellation for the whole stream.' }],
+        returns: 'bytes in order; a missing reference or integrity failure rejects the stream.',
+      },
+      {
         signature: '@Remote(\'updateQueue\') updateQueue(request: SessionUpdateQueueRequest): SessionUpdateQueueValue',
         description: 'Mutate one still-pending queue occurrence on a live Agent.',
         parameters: [{ name: 'request', description: 'Session, queue item, and requested mutation.' }],
@@ -1568,6 +1615,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'header', description: 'the immutable header (id, version, cwd, lineage) to store.' }, { name: 'options', description: 'optional cancellation.' }],
         returns: 'a `write` handle owned by the caller; close it to release ownership.',
         throws: ['{SessionAlreadyExistsError} when the id already exists.'],
+      },
+      {
+        signature: 'beginImport(header: SessionHeader, options?: SessionPersistenceCreateOptions): Promise<SessionImportTransaction>',
+        description: 'Begin a durable, hidden import with exclusive ownership of a fresh id. Providers without transactional import must refuse before creating anything.',
+        parameters: [{ name: 'header', description: 'fresh Session metadata with import lineage.' }, { name: 'options', description: 'inherited cut and optional cancellation.' }],
+        returns: 'the transaction owning its write handle and publication boundary.',
       },
       {
         signature: 'abstract open(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle>',
@@ -2729,10 +2782,27 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'The web access service. Registered as `ctx.web` (one instance per context).\n\nSelection semantics (resolved at execution time, never order-dependent):\n\n- A configured id that is registered and `available()` → that provider.\n- A configured id not registered → `WEB_PROVIDER_CONFIGURED_MISSING`.\n- A configured id registered but unavailable → `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`.\n- No id configured, exactly one registered usable provider → that provider.\n- No id configured, multiple usable providers → `WEB_PROVIDER_AMBIGUOUS`.\n- No id configured, no usable provider → `WEB_PROVIDER_UNAVAILABLE`.',
     methods: [
       {
+        signature: 'registerSearchProvider(provider: WebSearchProvider): () => void',
+        description: 'Register a search provider. Throws WebError `WEB_DUPLICATE_PROVIDER` if its id is already registered for search. Returns a disposer; disposed with the calling fiber.',
+        parameters: [{ name: 'provider', description: 'the provider; its `id` is the registry key.' }],
+        returns: 'the disposer that unregisters the provider.',
+      },
+      {
         signature: 'registerFetchProvider(provider: WebFetchProvider): () => void',
         description: 'Register a fetch provider. Throws WebError `WEB_DUPLICATE_PROVIDER` if its id is already registered for fetch. Returns a disposer; disposed with the calling fiber.',
         parameters: [{ name: 'provider', description: 'the provider; its `id` is the registry key.' }],
         returns: 'the disposer that unregisters the provider.',
+      },
+      {
+        signature: 'async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult>',
+        description: 'Run one search through the selected provider. Resolves the provider at call time with the selection rules above; throws WebError when the capability cannot run. The seam enforces `request.maxResults` on the result: if the provider over-returns, `sources[]` is truncated and `truncated` set.',
+        parameters: [{ name: 'request', description: 'the query and optional result limit.' }, { name: 'signal', description: 'optional cancellation signal forwarded to the provider.' }],
+        returns: 'the provider\'s results, capped to `request.maxResults`.',
+      },
+      {
+        signature: '@Remote async testSearchConnection(request: WebSearchConnectionTestRequest, signal: AbortSignal): Promise<void>',
+        description: 'Verify the selected search provider using transient settings supplied by its configuration form. A valid empty result still means the connection succeeded because the provider checked the HTTP status and response shape.',
+        parameters: [{ name: 'request', description: 'provider-owned draft option names and values.' }, { name: 'signal', description: 'caller lifetime forwarded to the provider request.' }],
       },
       {
         signature: 'async fetch(request: WebFetchRequest, signal?: AbortSignal): Promise<WebFetchResult>',
@@ -3474,12 +3544,40 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AgentCancelCause = {\n    readonly kind: \'user\';\n} | {\n    readonly kind: \'parent\';\n} | {\n    readonly kind: \'hook\';\n    readonly reason: string;\n} | {\n    readonly kind: \'disposed\';\n};',
   },
   {
+    name: 'AgentDriver',
+    declaration: 'export interface AgentDriver {\n    readonly driverId: string;\n    readonly agent: Agent;\n    start(source: SessionStartSource, signal: AbortSignal): Promise<void>;\n    dispose(): Promise<void>;\n}',
+  },
+  {
+    name: 'AgentDriverCatalog',
+    declaration: 'export interface AgentDriverCatalog {\n    readonly name: string;\n    readonly models: readonly {\n        readonly id: string;\n        readonly name: string;\n        readonly description?: string;\n        readonly inputModalities?: readonly (\'text\' | \'image\')[];\n        readonly reasoning?: {\n            readonly efforts: readonly {\n                readonly id: string;\n                readonly name: string;\n                readonly description?: string;\n            }[];\n            readonly defaultEffort?: string;\n        };\n    }[];\n}',
+  },
+  {
+    name: 'AgentDriverFactory',
+    declaration: 'export interface AgentDriverFactory {\n    readonly driverId: string;\n    readonly catalog?: AgentDriverCatalog;\n    createDriver(ctx: Context, id: SessionId, options: AgentOptions, session: import(\'@deepseek-ai/dsh-session\').Session): AgentDriver;\n}',
+  },
+  {
+    name: 'AgentDriverRoute',
+    declaration: 'export type AgentDriverRoute = {\n    readonly kind: \'create\';\n} | {\n    readonly kind: \'resume\';\n    readonly driverId?: string;\n} | {\n    readonly kind: \'import\';\n    readonly driverId: string;\n};',
+  },
+  {
+    name: 'AgentDriverSelector',
+    declaration: 'export interface AgentDriverSelector {\n    readonly driverId: string;\n    selectDriver(ctx: Context, id: SessionId, options: AgentOptions, session: import(\'@deepseek-ai/dsh-session\').Session, route: AgentDriverRoute): AgentDriver | undefined;\n}',
+  },
+  {
+    name: 'AgentDriverStateV1',
+    declaration: 'export interface AgentDriverStateV1 {\n    readonly version: typeof PORTABLE_AGENT_VERSION;\n    readonly sessionId: string;\n    readonly driver: {\n        readonly id: string;\n        readonly version: string;\n    };\n    readonly model: {\n        readonly provider: string;\n        readonly id: string;\n    };\n    readonly lineage?: {\n        readonly sourceSessionId: string;\n        readonly sourceDriverId: string;\n        readonly importId: string;\n    };\n}',
+  },
+  {
     name: 'AgentFactory',
     declaration: 'export interface AgentFactory {\n    createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle>;\n    resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>;\n}',
   },
   {
     name: 'AgentHandle',
     declaration: 'export interface AgentHandle {\n    agent: Agent;\n    dispose(): Promise<void>;\n}',
+  },
+  {
+    name: 'AgentImportPublisher',
+    declaration: 'export interface AgentImportPublisher<Preparation> {\n    createImportedAgent(preparation: Preparation, options?: ImportedAgentOptions): Promise<AgentHandle>;\n}',
   },
   {
     name: 'AgentOptions',
@@ -3530,6 +3628,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AgentStatus = \'idle\' | \'running\';',
   },
   {
+    name: 'AgentTransferLineageV1',
+    declaration: 'export type AgentTransferLineageV1 = NonNullable<AgentDriverStateV1[\'lineage\']>;',
+  },
+  {
+    name: 'AgentTransferPorts',
+    declaration: 'export interface AgentTransferPorts<Result = unknown> {\n    readonly source: AgentTransferSourcePort;\n    readonly target: AgentTransferTargetPort<Result> & AgentImportPublisher<Result>;\n}',
+  },
+  {
+    name: 'AgentTransferSourcePort',
+    declaration: 'export interface AgentTransferSourcePort {\n    readonly driverId: string;\n    exportArchivedContext(input: ArchivedAgentSource): Promise<PortableAgentBundleV1>;\n    exportPortableContext(sessionId: SessionId): Promise<PortableAgentBundleV1>;\n    exportPortableContextStream?(sessionId: SessionId): Promise<PortableAgentStreamBundleV1>;\n}',
+  },
+  {
+    name: 'AgentTransferTargetPort',
+    declaration: 'export interface AgentTransferTargetPort<Result> {\n    readonly driverId: string;\n    importCapabilities(): PortableImportCapabilitiesV1 | Promise<PortableImportCapabilitiesV1>;\n    describeAuthentication(model: AgentDriverStateV1[\'model\']): Promise<LlmAuthenticationInfo>;\n    importPortableContext(input: {\n        readonly context: PortableAgentContextV1;\n        readonly privateSnapshot?: PrivateDriverSnapshotV1;\n        readonly targetSessionId: SessionId;\n        readonly attachments?: ReadonlyMap<string, Extract<ContentBlock, {\n            type: \'image\' | \'file\';\n        }>>;\n        readonly targetModel: AgentDriverStateV1[\'model\'];\n        readonly lineage: AgentTransferLineageV1;\n    }): Promise<Result>;\n}',
+  },
+  {
     name: 'ApiKeyRecord',
     declaration: 'export interface ApiKeyRecord {\n    readonly kind: \'api-key\';\n    readonly key?: string;\n    readonly env?: Readonly<Record<string, string>>;\n}',
   },
@@ -3556,6 +3670,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ApprovalRequestEvent',
     declaration: 'export interface ApprovalRequestEvent {\n    readonly agent: Agent;\n    readonly toolName: string;\n    readonly callId?: ToolCallId;\n    readonly reason?: string;\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'ArchivedAgentSource',
+    declaration: 'export interface ArchivedAgentSource {\n    readonly session: Session;\n    readArtifact(this: void, sha256: string, bytes: number): AsyncIterable<Uint8Array>;\n}',
   },
   {
     name: 'AskUserQuestionAnswer',
@@ -3595,7 +3713,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AssembledSection',
-    declaration: 'export interface AssembledSection {\n    name: string;\n    text: string;\n}',
+    declaration: 'export interface AssembledSection {\n    name: string;\n    text: string;\n    literal?: true;\n}',
   },
   {
     name: 'AssistantMessage',
@@ -3802,6 +3920,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ConfinedSandboxMode = Exclude<SandboxMode, \'danger-full-access\'>;',
   },
   {
+    name: 'ContentBlock',
+    declaration: 'export type ContentBlock = ContentBlockMap[ContentBlockType];',
+  },
+  {
     name: 'ContentBlockMap',
     declaration: 'export interface ContentBlockMap {\n    \'text\': TextBlock;\n    \'reasoning\': ReasoningBlock;\n    \'image\': ImageBlock;\n    \'file\': FileBlock;\n    \'tool-call\': ToolCallBlock;\n    \'tool-result\': ToolResultBlock;\n}',
   },
@@ -3907,7 +4029,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CreateAgentOptions',
-    declaration: 'export interface CreateAgentOptions {\n    readonly sessionId: SessionId;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly isSeeded?: boolean;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n    readonly inheritedEventCount?: SessionLogOffset;\n    readonly seed?: readonly SessionEvent[];\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
+    declaration: 'export interface CreateAgentOptions {\n    readonly sessionId: SessionId;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly importLineage?: SessionImportLineage;\n        readonly isSeeded?: boolean;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n    readonly inheritedEventCount?: SessionLogOffset;\n    readonly seed?: readonly SessionEvent[];\n    readonly route?: Extract<AgentDriverRoute, {\n        kind: \'import\';\n    }>;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
   },
   {
     name: 'CreateGoalRequest',
@@ -3919,7 +4041,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CreateSessionOptions',
-    declaration: 'export interface CreateSessionOptions {\n    readonly seed?: readonly SessionEvent[];\n    readonly inheritedEventCount?: SessionLogOffset;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly createdAt?: number;\n        readonly isSeeded?: boolean;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n}',
+    declaration: 'export interface CreateSessionOptions {\n    readonly seed?: readonly SessionEvent[];\n    readonly inheritedEventCount?: SessionLogOffset;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly importLineage?: SessionImportLineage;\n        readonly createdAt?: number;\n        readonly isSeeded?: boolean;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n}',
   },
   {
     name: 'CreateTeamTaskRequest',
@@ -3948,22 +4070,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CredentialRef',
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
-  },
-  {
-    name: 'DeepSeekLlmApiExtensionMap',
-    declaration: 'export interface DeepSeekLlmApiExtensionMap {\n}',
-  },
-  {
-    name: 'DeepSeekLlmApiExtensionProvider',
-    declaration: 'export interface DeepSeekLlmApiExtensionProvider<T extends DeepSeekLlmApiJson> {\n    prepare(request: DeepSeekLlmApiExtensionRequest): PreparedDeepSeekLlmApiExtension<T> | undefined | Promise<PreparedDeepSeekLlmApiExtension<T> | undefined>;\n}',
-  },
-  {
-    name: 'DeepSeekLlmApiExtensionRequest',
-    declaration: 'export interface DeepSeekLlmApiExtensionRequest {\n    readonly body: Readonly<Record<string, DeepSeekLlmApiJson>>;\n    readonly sessionId?: string;\n    readonly purpose?: \'compaction\' | \'session-title\';\n    readonly signal: AbortSignal;\n}',
-  },
-  {
-    name: 'DeepSeekLlmApiJson',
-    declaration: 'export type DeepSeekLlmApiJson = null | boolean | number | string | DeepSeekLlmApiJson[] | {\n    [key: string]: DeepSeekLlmApiJson;\n};',
   },
   {
     name: 'DiffCallView',
@@ -4250,6 +4356,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ImageVariantId = Branded<\'ImageVariantId\'>;',
   },
   {
+    name: 'ImportedAgentOptions',
+    declaration: 'export interface ImportedAgentOptions {\n    readonly cwd?: string;\n    readonly setup?: AgentSetup;\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
     name: 'IndexInjection',
     declaration: 'export type IndexInjection = {\n    kind: \'global\';\n    name: string;\n    value: unknown;\n} | {\n    kind: \'script\';\n    placement: IndexInjectionPlacement;\n    text: string;\n} | {\n    kind: \'script-src\';\n    placement: IndexInjectionPlacement;\n    src: string;\n} | {\n    kind: \'script-preload\';\n    src: string;\n} | {\n    kind: \'style\';\n    text: string;\n} | {\n    kind: \'html\';\n    placement: IndexInjectionPlacement;\n    html: string;\n};',
   },
@@ -4379,11 +4489,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmAdapter',
-    declaration: 'export abstract class LlmAdapter {\n    providerInfo(provider: string): LlmProviderInfo;\n    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;\n    imageRequestPricing(_provider: string, _model: string): LlmImageRequestPricing | undefined;\n    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;\n    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall>;\n    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+    declaration: 'export abstract class LlmAdapter {\n    describeAuthentication(_provider: string, _model: string): Promise<LlmAuthenticationInfo>;\n    providerInfo(provider: string): LlmProviderInfo;\n    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;\n    imageRequestPricing(_provider: string, _model: string): LlmImageRequestPricing | undefined;\n    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;\n    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall>;\n    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
     name: 'LlmAttemptId',
     declaration: 'export type LlmAttemptId = Branded<\'LlmAttemptId\'>;',
+  },
+  {
+    name: 'LlmAuthenticationInfo',
+    declaration: 'export type LlmAuthenticationInfo = {\n    readonly status: \'configured\' | \'missing\';\n    readonly reference: string;\n} | {\n    readonly status: \'provider-managed\' | \'unverified\';\n};',
   },
   {
     name: 'LlmCallConfig',
@@ -4443,7 +4557,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmRuntime',
-    declaration: 'export class LlmRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    @Remote\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    @Remote\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    @Remote(\'discoverModels\')\n    async remoteDiscoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;\n    fileRequestText(ref: FileAttachmentRef): string;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions) /* …truncated — full shape in source */',
+    declaration: 'export class LlmRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    @Remote\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    @Remote\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    @Remote(\'discoverModels\')\n    async remoteDiscoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;\n    fileRequestText(ref: FileAttachmentRef): string;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    async describeAuthentication(pro /* …truncated — full shape in source */',
   },
   {
     name: 'LspHover',
@@ -4634,20 +4748,52 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
   {
+    name: 'PortableAgentBundleV1',
+    declaration: 'export interface PortableAgentBundleV1 {\n    readonly context: PortableAgentContextV1;\n    readonly privateSnapshot?: PrivateDriverSnapshotV1;\n}',
+  },
+  {
+    name: 'PortableAgentContextStreamV1',
+    declaration: 'export interface PortableAgentContextStreamV1 {\n    readonly version: typeof PORTABLE_AGENT_VERSION;\n    readonly source: AgentDriverStateV1;\n    readonly items: AsyncIterable<PortableContextItemV1 | PortableOpaqueContextItemStreamV1>;\n    readonly effectiveItemIds: AsyncIterable<string>;\n    readonly compactions: AsyncIterable<PortableCompactionV1>;\n}',
+  },
+  {
+    name: 'PortableAgentContextV1',
+    declaration: 'export interface PortableAgentContextV1 {\n    readonly version: typeof PORTABLE_AGENT_VERSION;\n    readonly source: AgentDriverStateV1;\n    readonly items: readonly PortableContextItemV1[];\n    readonly effectiveItemIds: readonly string[];\n    readonly compactions: readonly PortableCompactionV1[];\n}',
+  },
+  {
+    name: 'PortableAgentStreamBundleV1',
+    declaration: 'export interface PortableAgentStreamBundleV1 {\n    readonly context: PortableAgentContextStreamV1;\n    readonly privateSnapshot?: PrivateDriverSnapshotV1 | PortablePrivateSnapshotStreamV1;\n}',
+  },
+  {
+    name: 'PortableCompactionV1',
+    declaration: 'export interface PortableCompactionV1 {\n    readonly id: string;\n    readonly mode: \'local\' | \'remote\';\n    readonly inputItemIds: readonly string[];\n    readonly outputItemIds: readonly string[];\n    readonly promptItemIds: readonly string[];\n    readonly resultItemIds: readonly string[];\n}',
+  },
+  {
+    name: 'PortableContentBlockV1',
+    declaration: 'export type PortableContentBlockV1 = {\n    readonly kind: \'text\' | \'reasoning\' | \'refusal\';\n    readonly text: string;\n} | {\n    readonly kind: \'attachment\';\n    readonly attachmentId: string;\n    readonly mediaType: string;\n    readonly name?: string;\n} | {\n    readonly kind: \'tool-call\';\n    readonly callId: string;\n    readonly name: string;\n    readonly arguments: string;\n} | {\n    readonly kind: \'tool-result\';\n    readonly callId: string;\n    readonly content: readonly PortableContentBlockV1[];\n    readonly isError: boolean;\n} | {\n    readonly kind: \'opaque\';\n    readonly namespace: string;\n    readonly value: JsonValue;\n};',
+  },
+  {
+    name: 'PortableContextItemV1',
+    declaration: 'export interface PortableContextItemV1 {\n    readonly id: string;\n    readonly role: \'system\' | \'developer\' | \'user\' | \'assistant\' | \'tool\';\n    readonly content: readonly PortableContentBlockV1[];\n    readonly provenance: {\n        readonly kind: \'user\' | \'model\' | \'tool\' | \'instruction\' | \'compaction\';\n        readonly sourceId?: string;\n    };\n}',
+  },
+  {
+    name: 'PortableImportCapabilitiesV1',
+    declaration: 'export interface PortableImportCapabilitiesV1 {\n    readonly driverId: string;\n    readonly supportedContextVersions: readonly number[];\n    readonly supportedPrivateSnapshotVersions: readonly number[];\n    readonly supportedPrivateRevisions: readonly string[];\n    readonly supportedOpaqueNamespaces: readonly string[];\n    readonly availableModels: readonly {\n        readonly provider: string;\n        readonly id: string;\n    }[];\n}',
+  },
+  {
+    name: 'PortableOpaqueContextItemStreamV1',
+    declaration: 'export interface PortableOpaqueContextItemStreamV1 {\n    readonly encoding: \'opaque-json\';\n    readonly id: string;\n    readonly role: PortableContextItemV1[\'role\'];\n    readonly namespace: string;\n    readonly provenance: PortableContextItemV1[\'provenance\'];\n    readonly json: {\n        readonly chunks: AsyncIterable<Uint8Array>;\n        readonly bytes: number;\n        readonly sha256: string;\n    };\n}',
+  },
+  {
+    name: 'PortablePrivateSnapshotStreamV1',
+    declaration: 'export interface PortablePrivateSnapshotStreamV1 extends Omit<PrivateDriverSnapshotV1, \'context\'> {\n    readonly contextJson: AsyncIterable<Uint8Array>;\n    readonly contextBytes: number;\n    readonly contextSha256: string;\n}',
+  },
+  {
     name: 'PostToolDecision',
     declaration: 'export type PostToolDecision = {\n    kind: \'accept\';\n    content?: ContentBlock[];\n    value?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'accept\';\n    value: JsonValue;\n    content?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'block\';\n    feedback: ContentBlock[];\n    additionalContexts?: UserMessage[];\n};',
   },
   {
     name: 'PreparedAdapterCall',
     declaration: 'export interface PreparedAdapterCall {\n    readonly model: LlmResolvedModelInfo;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
-  },
-  {
-    name: 'PreparedDeepSeekLlmApiExtension',
-    declaration: 'export interface PreparedDeepSeekLlmApiExtension<T extends DeepSeekLlmApiJson> {\n    readonly value: T;\n    accept?(): void | Promise<void>;\n}',
-  },
-  {
-    name: 'PreparedDeepSeekLlmApiExtensions',
-    declaration: 'export interface PreparedDeepSeekLlmApiExtensions {\n    readonly fields: Readonly<Partial<DeepSeekLlmApiExtensionMap>>;\n    accept(): Promise<void>;\n}',
   },
   {
     name: 'PreparedLlmCall',
@@ -4680,6 +4826,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PreToolDecision',
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
+  },
+  {
+    name: 'PrivateDriverSnapshotV1',
+    declaration: 'export interface PrivateDriverSnapshotV1 {\n    readonly version: typeof PORTABLE_AGENT_VERSION;\n    readonly driverId: string;\n    readonly driverRevision: string;\n    readonly schemaVersion: number;\n    readonly context: JsonValue;\n}',
   },
   {
     name: 'ProjectionChangeListener',
@@ -4719,7 +4869,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PromptSection',
-    declaration: 'export interface PromptSection {\n    readonly name: string;\n    readonly order: number;\n    readonly text: string | ((context: AssembleContext) => string);\n    readonly complete?: boolean;\n}',
+    declaration: 'export interface PromptSection {\n    readonly name: string;\n    readonly order: number;\n    readonly text: string | ((context: AssembleContext) => string);\n    readonly literal?: true;\n    readonly complete?: boolean;\n}',
   },
   {
     name: 'PromptSectionOrderName',
@@ -4950,6 +5100,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionAttachmentValue {\n    readonly attachment: ImageAttachmentRef;\n    readonly data: string;\n}',
   },
   {
+    name: 'SessionAuditArtifactChunk',
+    declaration: 'export interface SessionAuditArtifactChunk {\n    readonly data: string;\n}',
+  },
+  {
+    name: 'SessionAuditArtifactRequest',
+    declaration: 'export interface SessionAuditArtifactRequest {\n    readonly sessionId: SessionId;\n    readonly eventId: string;\n    readonly sha256: string;\n}',
+  },
+  {
     name: 'SessionAvailability',
     declaration: 'export type SessionAvailability = \'live\' | \'persisted\';',
   },
@@ -5083,7 +5241,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionHeader',
-    declaration: 'export interface SessionHeader {\n    readonly version: typeof SESSION_FORMAT_VERSION;\n    readonly id: SessionId;\n    readonly createdAt: number;\n    readonly cwd?: string;\n    readonly parentSession?: SessionId;\n    readonly isSeeded: boolean;\n    readonly origin?: \'subagent\';\n    readonly delegationDepth?: number;\n    readonly agentPreset?: string;\n}',
+    declaration: 'export interface SessionHeader {\n    readonly version: typeof SESSION_FORMAT_VERSION;\n    readonly id: SessionId;\n    readonly createdAt: number;\n    readonly cwd?: string;\n    readonly parentSession?: SessionId;\n    readonly importLineage?: SessionImportLineage;\n    readonly isSeeded: boolean;\n    readonly origin?: \'subagent\';\n    readonly delegationDepth?: number;\n    readonly agentPreset?: string;\n}',
   },
   {
     name: 'SessionHistoryRecord',
@@ -5092,6 +5250,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionId',
     declaration: 'export type SessionId = Branded<\'SessionId\'>;',
+  },
+  {
+    name: 'SessionImportLineage',
+    declaration: 'export interface SessionImportLineage extends Record<string, string> {\n    readonly sourceSessionId: SessionId;\n    readonly sourceDriverId: string;\n    readonly importId: string;\n}',
+  },
+  {
+    name: 'SessionImportTransaction',
+    declaration: 'export interface SessionImportTransaction {\n    readonly handle: SessionHandle;\n    publish<T>(publish: () => T): Promise<T>;\n    rollback(): Promise<void>;\n}',
   },
   {
     name: 'SessionInspection',
@@ -5862,6 +6028,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TerminalWaitReason = \'stdin_read\' | \'inferred_idle\' | \'timeout\' | \'session_exit\';',
   },
   {
+    name: 'TextBlock',
+    declaration: 'export interface TextBlock {\n    type: \'text\';\n    text: string;\n}',
+  },
+  {
     name: 'TokenMeasurement',
     declaration: 'export interface TokenMeasurement {\n    readonly logRevision: SessionLogOffset;\n    readonly baseline: TokenMeasurementBaseline;\n    readonly surfaceDeltaTokens: number;\n    readonly totalTokens: number;\n    readonly surfaceTokens: number;\n    readonly nodes: readonly TokenSurfaceNode[];\n}',
   },
@@ -6175,7 +6345,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WebResultView',
-    declaration: 'export type WebResultView = WebFetchResultView;',
+    declaration: 'export type WebResultView = WebSearchResultView | WebFetchResultView;',
   },
   {
     name: 'WebRoute',
@@ -6184,6 +6354,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WebRouteKind',
     declaration: 'export type WebRouteKind = \'exact\' | \'prefix\';',
+  },
+  {
+    name: 'WebSearchConnectionOption',
+    declaration: 'export interface WebSearchConnectionOption {\n    readonly name: string;\n    readonly value: string;\n}',
+  },
+  {
+    name: 'WebSearchConnectionTestRequest',
+    declaration: 'export interface WebSearchConnectionTestRequest {\n    readonly options: readonly WebSearchConnectionOption[];\n}',
+  },
+  {
+    name: 'WebSearchProvider',
+    declaration: 'export interface WebSearchProvider {\n    readonly id: string;\n    available(): boolean;\n    search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult>;\n    testConnection?(request: WebSearchConnectionTestRequest, signal?: AbortSignal): Promise<void>;\n}',
+  },
+  {
+    name: 'WebSearchRequest',
+    declaration: 'export interface WebSearchRequest {\n    readonly query: string;\n    readonly maxResults?: number;\n}',
+  },
+  {
+    name: 'WebSearchResult',
+    declaration: 'export interface WebSearchResult {\n    readonly content?: string;\n    readonly sources: readonly WebSearchSource[];\n    readonly truncated: boolean;\n}',
+  },
+  {
+    name: 'WebSearchResultView',
+    declaration: 'export interface WebSearchResultView {\n    card: \'web\';\n    kind: \'search\';\n    title?: string;\n    sources: WebSource[];\n    answer?: string;\n    truncated: boolean;\n}',
+  },
+  {
+    name: 'WebSearchSource',
+    declaration: 'export interface WebSearchSource {\n    readonly url: string;\n    readonly title?: string;\n    readonly snippet?: string;\n    readonly publishedAt?: string;\n}',
+  },
+  {
+    name: 'WebSource',
+    declaration: 'export interface WebSource {\n    url: string;\n    title?: string;\n    snippet?: string;\n    publishedAt?: string;\n}',
   },
   {
     name: 'WebUpgradeRoute',

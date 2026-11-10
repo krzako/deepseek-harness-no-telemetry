@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-attachment-local
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 This package provides the local storage and image-processing backend for attachments: source images are validated, oriented, stripped of metadata and color profiles, normalized to 8-bit sRGB/sRGBA, and saved below `DSH_HOME`; route-specific request versions are derived and cached separately, and generic files are saved byte-for-byte with no admission limits. Streamed file writes and reads use bounded chunks; writes hash into a private staging object before atomic publication, and reads verify the recorded byte length and digest without a whole-file memory copy. It is what the shipped `dsh` composition uses, so durable attachments work without configuration. Identical bytes occupy one canonical object even when uploads use different display names; each model-facing name is a hard link to that object. Concurrent reads of one request variant share work, and stored images stay readable after later admission-limit changes. Storage is local to this machine; other hosts cannot read these objects, and objects are never deleted automatically.
@@ -151,3 +149,5 @@ This Dev Note is working context for maintainers: undecided directions and open 
 Retention and garbage collection are deferred because resumed and forked sessions may share immutable objects, and a backend serving remote runtimes or shared storage would need its own durability proof. Both directions are undecided; the local storage currently retains every object under `DSH_HOME`.
 
 </details>
+
+`restoreImage({ ref, data }, signal?)` is the archive-import operation for an existing image reference. It preserves exact encoded bytes, the content-addressed ID and recorded provenance instead of applying the destination normalization policy. The local backend checks digest, byte count, media type, intrinsic dimensions and complete raster decoding before its existing durable immutable-object commit. Current admission byte/pixel/dimension limits may reject an archive image explicitly; they do not silently resize it. Input bytes and the decoded raster are resident during this operation. Cancellation is honored before publication starts; a durable commit already in progress completes. Backends without exact restore support reject with `ATTACHMENT_RESTORE_UNSUPPORTED`. The operation does not create Session events, install the rest of an archive or roll back previously committed shared objects.

@@ -6,13 +6,14 @@ import { dirname, join, parse, resolve } from 'node:path'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import sharp from 'sharp'
-import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
+import { AttachmentId, type ImageAttachmentRef, type ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
 import type { NormalizationPolicy } from '../src/normalization.ts'
 import {
   commitPreparedImageFile,
   prepareImageFile,
   publishImmutableObject,
   readImageFile,
+  restoreImageFile,
   saveImageFile,
 } from '../src/store.ts'
 
@@ -80,6 +81,40 @@ afterEach(async () => {
 })
 
 describe('local attachment store', () => {
+  it('restores exact archived bytes and provenance without normalization, including deduplication', async () => {
+    const storageRoot = await root()
+    const ref: ImageAttachmentRef = { attachmentId: AttachmentId(`sha256:${createHash('sha256').update(PNG).digest('hex')}`),
+      mediaType: 'image/png', bytes: PNG.length, width: 1, height: 1, name: 'original.png', originalDimensions: { width: 4, height: 4 } }
+    expect(await restoreImageFile(storageRoot, { ref, data: PNG }, LIMITS)).toEqual(ref)
+    expect(await restoreImageFile(storageRoot, { ref, data: PNG }, LIMITS)).toEqual(ref)
+    expect(await readImageFile(storageRoot, ref)).toEqual({ ref, data: PNG })
+  })
+
+  it('refuses corrupt image references, incomplete decode, operator limits and cancellation before storage', async () => {
+    const storageRoot = await root()
+    const ref: ImageAttachmentRef = { attachmentId: AttachmentId(`sha256:${createHash('sha256').update(PNG).digest('hex')}`),
+      mediaType: 'image/png', bytes: PNG.length, width: 1, height: 1 }
+    for (const changed of [{ ...ref, bytes: ref.bytes + 1 }, { ...ref, width: 2 },
+      { ...ref, attachmentId: AttachmentId(`sha256:${'0'.repeat(64)}`) }]) {
+      await expect(restoreImageFile(storageRoot, { ref: changed, data: PNG }, LIMITS)).rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
+    }
+    await expect(restoreImageFile(storageRoot, { ref: { ...ref, mediaType: 'image/jpeg' }, data: PNG }, LIMITS))
+      .rejects.toMatchObject({ code: 'IMAGE_TYPE_MISMATCH' })
+    await expect(restoreImageFile(storageRoot, { ref, data: PNG }, { ...LIMITS, maxImageBytes: PNG.length - 1 }))
+      .rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
+    const truncated = PNG.slice(0, 48)
+    await expect(restoreImageFile(storageRoot, { ref: { ...ref, bytes: truncated.length,
+      attachmentId: AttachmentId(`sha256:${createHash('sha256').update(truncated).digest('hex')}`) }, data: truncated }, LIMITS))
+      .rejects.toMatchObject({ code: 'INVALID_IMAGE' })
+    await expect(restoreImageFile(storageRoot, { ref, data: PNG }, LIMITS, AbortSignal.abort(new Error('cancel restore'))))
+      .rejects.toThrow('cancel restore')
+    const controller = new AbortController()
+    const restoring = restoreImageFile(storageRoot, { ref, data: PNG }, LIMITS, controller.signal)
+    controller.abort(new Error('cancel during decode'))
+    await expect(restoring).rejects.toThrow('cancel during decode')
+    await expect(readdir(storageRoot)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it.skipIf(process.platform === 'win32')('syncs every object ancestor up to the durable boundary before returning', async () => {
     const storageRoot = await root()
     const base = join(storageRoot, '..', '..')

@@ -14,6 +14,7 @@ import type {
   GenerateOptions,
   ImageAttachmentAccess,
   LlmModelInfo,
+  LlmAuthenticationInfo,
   LlmProviderInfo,
   PreparedAdapterCall,
   LlmResolvedModelInfo,
@@ -113,6 +114,8 @@ export interface DeepSeekConnectionOptions {
 
 /** Constructor options for {@link DeepSeekAdapter}: the operation-local resolution hooks the plugin owns. */
 export interface DeepSeekAdapterOptions {
+  /** Read local authentication metadata for the captured connection without resolving its secret. */
+  describeAuthentication?: (connection: DeepSeekConnectionOptions) => Promise<LlmAuthenticationInfo>
   /** Current validated connection facts; called once per operation. */
   options: () => DeepSeekConnectionOptions
   /**
@@ -352,6 +355,10 @@ export function httpErrorCode(status: number, error?: WireError['error']): strin
  */
 export class DeepSeekAdapter extends LlmAdapter {
   private readonly files: DeepSeekFileStore
+
+  override describeAuthentication(_provider: string, _model: string): Promise<LlmAuthenticationInfo> {
+    return this.config.describeAuthentication?.(this.config.options()) ?? Promise.resolve({ status: 'unverified' })
+  }
 
   constructor(private readonly config: DeepSeekAdapterOptions) {
     super()

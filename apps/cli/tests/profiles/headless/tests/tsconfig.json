@@ -1,0 +1,71 @@
+{
+  "extends": "../../../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false
+  },
+  "include": [
+    "./**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../../../../../../packages/code-runtime/code-runtime-worker-thread"
+    },
+    {
+      "path": "../../../../../../packages/compaction/compaction-basic"
+    },
+    {
+      "path": "../../../../../../packages/context/agent-instructions"
+    },
+    {
+      "path": "../../../../../../packages/core/agent-loop"
+    },
+    {
+      "path": "../../../../../../packages/extensions/tool-cordis"
+    },
+    {
+      "path": "../../../../../../packages/fs/fs-local"
+    },
+    {
+      "path": "../../../../../../packages/fs/tool-fs"
+    },
+    {
+      "path": "../../../../../../packages/jobs/jobs-local"
+    },
+    {
+      "path": "../../../../../../packages/jobs/tool-jobs"
+    },
+    {
+      "path": "../../../../../../packages/llm/llm-deepseek"
+    },
+    {
+      "path": "../../../../../../packages/session/session-checkpoint-policy"
+    },
+    {
+      "path": "../../../../../../packages/session/session-persistence-jsonl"
+    },
+    {
+      "path": "../../../../../../packages/shell/bash-local"
+    },
+    {
+      "path": "../../../../../../packages/shell/tool-bash"
+    },
+    {
+      "path": "../../../../../../packages/subagent/subagent"
+    },
+    {
+      "path": "../../../../../../packages/subprocess/subprocess-local"
+    },
+    {
+      "path": "../../../../../../packages/test-support/agent-loop-testkit"
+    },
+    {
+      "path": "../../../../../../packages/test-support/session-snapshot"
+    },
+    {
+      "path": "../../../../../../packages/sandbox/sandbox-policy"
+    }
+  ]
+}

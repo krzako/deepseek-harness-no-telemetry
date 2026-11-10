@@ -276,7 +276,7 @@ describe('JsonlSessionPersistence: format helpers', () => {
     expect(() => scanLog(Buffer.from('42\n'))).toThrow(/session header/)
     expect(() => scanLog(Buffer.from('null\n'))).toThrow(/session header/)
     expect(() => scanLog(Buffer.from(
-      `${JSON.stringify({ type: 'session', version: 2, id: 123 })}\n`,
+      `${JSON.stringify({ type: 'session', version: SESSION_FORMAT_VERSION, id: 123 })}\n`,
     ))).toThrow(/first line is not a session header/)
     expect(() => scanLog(Buffer.from(
       `${JSON.stringify({ type: 'session', version: SESSION_FORMAT_VERSION + 1, id: 123 })}\n`,
@@ -579,7 +579,7 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
   afterEach(async () => { await ctx.fiber.dispose() })
 
   it('projects a released v0 header through stat and list without reading or mutating its body', async () => {
-    expect(SESSION_FORMAT_VERSION).toBe(2)
+    expect(SESSION_FORMAT_VERSION).toBe(3)
     const header = meta('released-v0-metadata', '/work')
     const sourcePath = historicalLogPath(root, header.cwd, header.id)
     const currentPath = rawLogPath(root, header.cwd, header.id)
@@ -598,7 +598,7 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     await expect(stat(currentPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('publishes v2 beside an unchanged v0 source before returning a read handle', async () => {
+  it('publishes v3 beside an unchanged v0 source before returning a read handle', async () => {
     const header = meta('released-v0-read', '/work')
     const sourcePath = historicalLogPath(root, header.cwd, header.id)
     const currentPath = rawLogPath(root, header.cwd, header.id)
@@ -620,7 +620,7 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
       version: SESSION_FORMAT_VERSION,
     })
     expect((await readdir(dirname(sourcePath))).filter(name => name.startsWith('session')).sort())
-      .toEqual(['session.jsonl', 'session.v2.jsonl'])
+      .toEqual(['session.jsonl', 'session.v3.jsonl'])
   })
 
   it('migrates released-v0 retry, repeated-compaction, provenance, and late-title shapes', async () => {
@@ -662,7 +662,7 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     expect(await readFile(sourcePath)).toEqual(source)
   })
 
-  it('publishes v2 beside an unchanged physical v1 source with packed chunk rows', async () => {
+  it('publishes v3 beside an unchanged physical v1 source with packed chunk rows', async () => {
     const header = meta('released-v1-read', '/work')
     const sourcePath = generationLogPath(root, header.cwd, header.id, 1, 'none')
     const currentPath = rawLogPath(root, header.cwd, header.id)
@@ -682,10 +682,49 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     expect(JSON.parse((await readFile(currentPath, 'utf8')).split('\n')[0] as string))
       .toMatchObject({ id: header.id, version: SESSION_FORMAT_VERSION })
     expect((await readdir(dirname(sourcePath))).filter(name => name.startsWith('session')).sort())
-      .toEqual(['session.v1.jsonl', 'session.v2.jsonl'])
+      .toEqual(['session.v1.jsonl', 'session.v3.jsonl'])
   })
 
-  it('selects v1 from a v0/v1 directory, then v2 from the retained three-generation set', async () => {
+  it('migrates a retained v2 log into v3 without changing the v2 bytes', async () => {
+    const header = meta('released-v2-read', '/work')
+    const sourcePath = generationLogPath(root, header.cwd, header.id, 2, 'none')
+    const source = `${JSON.stringify({ ...toHeaderLine(header), version: 2 })}\n`
+    await mkdir(dirname(sourcePath), { recursive: true })
+    await writeFile(sourcePath, source)
+
+    expect(await readAll(ctx.sessionPersistence, header.id)).toEqual({
+      meta: { ...header, delegationDepth: 0 },
+      events: [],
+    })
+    expect(await readFile(sourcePath, 'utf8')).toBe(source)
+    expect(JSON.parse((await readFile(rawLogPath(root, header.cwd, header.id), 'utf8')).trim()))
+      .toMatchObject({ id: header.id, version: 3 })
+  })
+
+  it('preserves imported lineage through a physical v3 write and fresh read handle', async () => {
+    const header: SessionHeader = {
+      ...meta('lineage-v3', '/work'),
+      importLineage: {
+        sourceSessionId: SessionId('source-v2'),
+        sourceDriverId: 'codex',
+        importId: 'transfer-1',
+      },
+    }
+    const writer = await ctx.sessionPersistence.create(header)
+    await writer.flush()
+    await writer.close()
+
+    const physical = JSON.parse((await readFile(rawLogPath(root, header.cwd, header.id), 'utf8')).trim()) as unknown as Record<string, unknown>
+    expect(physical.importLineage).toEqual(header.importLineage)
+    expect(await readAll(ctx.sessionPersistence, header.id)).toEqual({
+      meta: { ...header, delegationDepth: 0 },
+      events: [],
+    })
+    expect((await ctx.sessionPersistence.stat(header.id))?.header.importLineage)
+      .toEqual(header.importLineage)
+  })
+
+  it('selects v1 from a v0/v1 directory, then v3 from the retained three-generation set', async () => {
     const header = meta('mixed-generation-read', '/work')
     const directory = sessionDir(root, header.cwd, header.id)
     const v0Path = historicalLogPath(root, header.cwd, header.id)
@@ -698,12 +737,12 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     const migrated = await readAll(ctx.sessionPersistence, header.id)
     expect(migrated.events.map(event => event.type)).toContain('assistant/message')
     expect((await readdir(directory)).filter(name => name.startsWith('session')).sort())
-      .toEqual(['session.jsonl', 'session.v1.jsonl', 'session.v2.jsonl'])
+      .toEqual(['session.jsonl', 'session.v1.jsonl', 'session.v3.jsonl'])
 
     await writeFile(v0Path, 'corrupt lower v0\n')
     await writeFile(v1Path, 'corrupt lower v1\n')
     await expect(readAll(ctx.sessionPersistence, header.id)).resolves.toEqual(migrated)
-    expect(await readFile(v2Path, 'utf8')).toContain('"version":2')
+    expect(await readFile(v2Path, 'utf8')).toContain('"version":3')
   })
 
   it('uses the same migration path for a handle storage resolution', async () => {
@@ -789,10 +828,10 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
   it('selects a retained future generation above readable historical bytes', async () => {
     const header = meta('future-wins', '/work')
     const sourcePath = historicalLogPath(root, header.cwd, header.id)
-    const futurePath = generationLogPath(root, header.cwd, header.id, 3, 'none')
+    const futurePath = generationLogPath(root, header.cwd, header.id, SESSION_FORMAT_VERSION + 1, 'none')
     await mkdir(dirname(sourcePath), { recursive: true })
     await writeFile(sourcePath, `${JSON.stringify(releasedV0Header(header))}\n`)
-    await writeFile(futurePath, `${JSON.stringify({ type: 'session', version: 3, id: header.id })}\n`)
+    await writeFile(futurePath, `${JSON.stringify({ type: 'session', version: SESSION_FORMAT_VERSION + 1, id: header.id })}\n`)
 
     await expect(ctx.sessionPersistence.open(header.id, 'read')).rejects.toMatchObject({
       name: 'SessionFormatUnsupportedError',
@@ -1641,14 +1680,14 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
     const seeded = { ...meta('scanner-seeded-cut'), isSeeded: true }
     const seededHeader = JSON.stringify(toHeaderLine(seeded, SessionLogOffset(0)))
     expect(() => scanLog(Buffer.from(`${seededHeader}\n`)))
-      .toThrow(/seeded v2 header lacks an inherited end-seed marker/)
+      .toThrow(/seeded header lacks an inherited end-seed marker/)
 
     const unseededHeader = JSON.stringify(toHeaderLine(meta('scanner-unseeded-cut')))
     const inheritedMarker = JSON.stringify({
       type: 'session/end-seed', seq: 0, time: 1, data: { inherited: true },
     })
     expect(() => scanLog(Buffer.from(`${unseededHeader}\n${inheritedMarker}\n`)))
-      .toThrow(/unseeded v2 header contains an inherited end-seed marker/)
+      .toThrow(/unseeded header contains an inherited end-seed marker/)
   })
 
   it('handles empty writes, boundary newlines, torn fragments, and scanner completion', () => {

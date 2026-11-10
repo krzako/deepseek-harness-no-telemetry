@@ -64,6 +64,8 @@ export interface PromptSection {
    * interpolated later, by {@link renderPrompt}.
    */
   readonly text: string | ((context: AssembleContext) => string)
+  /** Preserve text exactly; do not interpret `{{...}}` as prompt variables. */
+  readonly literal?: true
   /**
    * Treat this contribution as the complete system prompt. Assembly still
    * runs the cooperative waterfall so tools, contexts, and variables can be
@@ -89,6 +91,8 @@ export interface AssembledSection {
   name: string
   /** The resolved (but not yet interpolated) section text. */
   text: string
+  /** Preserve imported or otherwise opaque text exactly during rendering. */
+  literal?: true
 }
 
 /** One resolved dynamic context contribution. */
@@ -253,7 +257,7 @@ export interface Config {
 }
 
 /**
- * Interpolate strict `{{variable}}` references, drop empty sections, and join
+ * Interpolate strict `{{variable}}` references in non-literal sections, drop empty sections, and join
  * the rest with blank lines. Malformed, unknown, or undefined references throw;
  * a lone `{{` without any later `}}` is literal prose, and substituted values
  * are not scanned again.
@@ -262,7 +266,7 @@ export interface Config {
  */
 export function renderPrompt(assembly: PromptAssembly): string {
   return assembly.sections
-    .map(section => interpolate(section, assembly.variables, 'section'))
+    .map(section => section.literal === true ? section.text : interpolate(section, assembly.variables, 'section'))
     .filter(text => text.length > 0)
     .join('\n\n')
 }
@@ -581,6 +585,7 @@ export class SystemPrompt extends Service {
         const assembled = {
           name: section.name,
           text: typeof section.text === 'function' ? section.text(context) : section.text,
+          ...section.literal === true ? { literal: true as const } : {},
         }
         if (section.complete === true) completeSection = { ...assembled }
         return assembled

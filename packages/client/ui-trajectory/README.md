@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-client-ui-trajectory
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-client-ui-trajectory` is the Trajectory view of the dsh web client: it renders a turn-aware event ledger with selectable User, Assistant, Tool, and nested Subtool records, plus an interactive timing overview. Thick rules mark Turn boundaries, compact inline markers identify Steps, and selecting a record opens a local inspector for token usage, duration, Input, Output, Timing, durable images, and file-attachment summaries from user, assistant, or tool content. The view is a pure consumer: it registers target-specific Event Definitions, a Trajectory view builder, and one tab in the conversation's `conversation.view` slot ring, and provides no service and declares no Context merge. Its typed `trajectory` locale namespace owns every product-authored ledger, timeline, inspector, tooltip, and accessibility phrase; event content, tool names, identifiers, and provider diagnostics remain verbatim data. Long ledgers open at the current tail, page older history on demand, and mount only the visible row window.
@@ -27,6 +25,10 @@ English | [中文](README.zh.md)
 
 Open the Trajectory tab in the conversation's view ring to inspect agent activity as an event ledger and timeline. The ledger covers records with an explicit loading row until the initial tail is positioned; while an older prefix remains unloaded, a first-row control loads one earlier page on click and shows a disabled loading status while that page is pending.
 
+The toolbar shows a `Codex` badge when the session's host-computed `codexThreadBinding` projection confirms a durable Codex thread binding. Only the bound boolean reaches the browser, not the native thread identity. The badge is independent of the current Codex enable switch and remains accurate for resumed sessions and paged history; an unbound or unavailable projection shows no badge.
+
+The Codex audit list shows durable facts in Session order. Expand a fact to inspect its raw fields; an artifact-backed field offers a separate on-demand load action. The complete content appears only after the Session Controller authorizes and verifies the stream. A failed read shows an error and does not display partial content.
+
 ### Inspecting records
 
 Selection, timeline navigation, folding, and search cover the React-visible window. Request numbers and cumulative usage cover the complete resident snapshot. Selecting a record opens a local inspector for token usage, duration, Input, Output, Timing, and durable images. Image URLs use the Conversation-owned per-session cache, so Chat and Trajectory share one authorized read per attachment. A user record shows the generic-file count beside its text, while a record without text shows its image and file counts. A standalone compaction request appears chronologically in its own `Between turns` section, while a numbered compaction remains inside its owning turn.
@@ -44,6 +46,8 @@ A fixed Overview above the ledger projects real record start/duration timing fro
 <summary>Implementation internals — click to expand</summary>
 
 The view is a pure projection: Trajectory-owned Definitions assemble business records from the shared Session window — including durable cancellation-finalized prefixes, chunk-only interruption fallbacks, and interrupted Tool records — so Trajectory neither reads nor changes the Chat conversation snapshot. Its steering classifier retains only next-step Inbox IDs through persistent splice state and shares each current claimed batch across later Contexts.
+
+Durable `codex/audit-v1` facts enter the Trajectory target snapshot in Session sequence order with their original event, attempt, turn, and tool identifiers. A separately paged Codex audit ledger in Trajectory shows their kinds and IDs and exposes the raw fact in a disclosure, without creating another Chat reply.
 
 ### Virtual rows
 
@@ -86,6 +90,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define what the view can show while work is in flight; they are current package constraints.
 
 - **In-flight Time stays blank** — `partial` and `runningCalls` rows show their running state without a fabricated duration, so the Overview renders a start marker rather than inventing a live span. Record and timeline selection are local to Trajectory, with no anchor deep links.
+- Large Codex audit payloads load only when requested; displaying their complete text in the browser still consumes memory proportional to that payload.
 
 <a id="dev-note"></a>
 ### Dev Note

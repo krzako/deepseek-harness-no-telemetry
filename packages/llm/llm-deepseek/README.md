@@ -5,11 +5,11 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-llm-deepseek
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `@deepseek-ai/dsh-llm-deepseek` is the direct DeepSeek adapter for the harness LLM service: it owns the `deepseek-official` provider route and translates DeepSeek's chat-completions wire format into the harness stream-chunk protocol. With it a composition can stream DeepSeek models with configurable thinking and reasoning effort, send images to vision models, and browse an advisory model catalog. Connection facts — endpoint, catalog, key, thinking policy — resolve per request, so editing the user settings document changes the next request without a restart. It is one of two structurally different adapters for DeepSeek: the pi-ai twin serves its own route names through a library and additional providers, and both can be mounted side by side.
+
+Authentication inspection captures the current resolved connection and reads credential presence with `credentials.describe()`. Only compositions without the credential service inspect the launch environment. The response contains the reference and configured/missing status, never the key; it does not contact DeepSeek or prove key validity.
 
 ## Table of Contents
 
@@ -177,6 +177,8 @@ Generated tokens follow the request's logged reasoning effort and `maxTokens`; o
 Loop-retained response blocks append to the next request and preserve its earlier reusable prefix; dropped blocks have no later cache effect. Changing the provider or model selects a different cache domain.
 
 ## Known Limitations and Deferred Work
+
+This fork excludes the DeepSeek package from its production Host aggregate. Its retained tests use `tests/tsconfig.json` with explicit package references; run `tsc -p packages/llm/llm-deepseek/tests/tsconfig.json` from the repository root after building the referenced packages. This keeps test typing and typed lint available without enabling the transport in production.
 
 <a id="known-limitations-and-deferred-work"></a>
 

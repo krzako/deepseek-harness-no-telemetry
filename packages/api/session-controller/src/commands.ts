@@ -1,10 +1,10 @@
 /** Session commands whose activation policy is explicit at each Remote method. */
 
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
-import { AttachmentError } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type {
   AttachmentAdmissionPart, FileAttachmentRef, ImageAttachmentRef,
 } from '@deepseek-ai/dsh-attachment'
@@ -34,6 +34,8 @@ import {
 import type {
   SessionAttachmentRequest,
   SessionAttachmentValue,
+  SessionAuditArtifactRequest,
+  SessionAuditArtifactChunk,
   SessionCancelRequest,
   SessionCancelValue,
   SessionCreateRequest,
@@ -125,13 +127,22 @@ export class SessionCommandController {
     const agent = await this.resolveAgent(request.sessionId)
     return this.agents.serializeImageAdmission(agent, async () => {
       try {
-        const resolved = await this.ctx.llm.resolveCallConfig({
-          provider: request.provider,
-          model: request.model,
-          ...(request.reasoningEffort === undefined
-            ? {}
-            : { reasoningEffort: ReasoningEffortId(request.reasoningEffort) }),
-        })
+        const driverModel = this.ctx.agents.resolveDriverModel(request.provider, request.model)
+        const resolved = driverModel === undefined
+          ? await this.ctx.llm.resolveCallConfig({
+            provider: request.provider,
+            model: request.model,
+            ...(request.reasoningEffort === undefined
+              ? {}
+              : { reasoningEffort: ReasoningEffortId(request.reasoningEffort) }),
+          })
+          : {
+            provider: request.provider,
+            model: request.model,
+            ...(request.reasoningEffort === undefined
+              ? {}
+              : { reasoningEffort: ReasoningEffortId(request.reasoningEffort) }),
+          }
         const selected: AgentModelSelection = {
           provider: resolved.provider,
           model: resolved.model,
@@ -139,7 +150,8 @@ export class SessionCommandController {
             ? {}
             : { reasoningEffort: resolved.reasoningEffort }),
         }
-        this.agents.selectForNextRequest(agent, selected)
+        const selectedAgent = await this.agents.agentForSelection(agent, selected)
+        this.agents.selectForNextRequest(selectedAgent, selected)
         try {
           await this.ctx.agentDefaultModel.saveSelection(selected)
         } catch (error) {
@@ -301,7 +313,7 @@ export class SessionCommandController {
         { value: request.clientTimeZone },
       )
     }
-    const agent = await this.resolveAgent(request.sessionId)
+    let agent = await this.resolveAgent(request.sessionId)
     if (hasPromptRequest(agent, request.requestId)) return { accepted: true }
     const selection = this.agents.selectionFor(agent).current
     if (!routeServed(this.ctx, selection.provider)) {
@@ -310,6 +322,14 @@ export class SessionCommandController {
         `no adapter serves provider "${selection.provider}"; select a model for this session`,
         { provider: selection.provider, model: selection.model },
       )
+    }
+    try {
+      agent = await this.agents.agentForSelection(agent, selection)
+      this.agents.applySelectionForNextTurn(agent, selection)
+    } catch (error) {
+      throw new RemoteError('session/model-unavailable', String(error), {
+        provider: selection.provider, model: selection.model,
+      })
     }
     const source: MessageSource = {
       kind: 'user',
@@ -321,7 +341,8 @@ export class SessionCommandController {
       try {
         if (hasImage) {
           const current = this.agents.selectionFor(agent).current
-          const model = await this.ctx.llm.resolveModelInfo(current.provider, current.model)
+          const model = this.ctx.agents.resolveDriverModel(current.provider, current.model)
+            ?? await this.ctx.llm.resolveModelInfo(current.provider, current.model)
           if (model.inputModalities !== undefined && !model.inputModalities.includes('image')) {
             throw new RemoteError(
               'session/attachment-invalid',
@@ -397,6 +418,58 @@ export class SessionCommandController {
         throw new RemoteError('session/attachment-invalid', error.message, { reason: error.code })
       }
       throw new RemoteError('gateway/internal', 'Unable to read image attachment.', {})
+    }
+  }
+
+  /**
+   * Read only the artifact named by a fact and receipt in the addressed Session.
+   * @param request - Session, fact, and digest identifying the payload.
+   * @param signal - cancellation for storage reads.
+   * @returns bytes in order; integrity failure rejects after the final read.
+   */
+  async *auditArtifact(
+    request: SessionAuditArtifactRequest,
+    signal: AbortSignal,
+  ): AsyncIterable<SessionAuditArtifactChunk> {
+    signal.throwIfAborted()
+    let source: SessionReadState
+    try {
+      source = await this.readSessionState(request.sessionId)
+    } catch (error) {
+      if (error instanceof ApiSessionNotFound) {
+        throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId })
+      }
+      throw new RemoteError('gateway/internal', `audit authorization unavailable: ${String(error)}`, {})
+    }
+    const match = referencedAuditArtifact(source.events, request.eventId, request.sha256)
+    if (match === undefined) {
+      throw new RemoteError('session/attachment-invalid', 'Audit artifact is not referenced by this session.',
+        { reason: 'ATTACHMENT_NOT_REFERENCED' })
+    }
+    const ref: FileAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${request.sha256}`),
+      name: match.name,
+      bytes: match.bytes,
+    }
+    const hash = createHash('sha256')
+    let bytes = 0
+    try {
+      for await (const chunk of this.ctx.attachments.readFileStream(ref, signal)) {
+        signal.throwIfAborted()
+        bytes += chunk.byteLength
+        if (!Number.isSafeInteger(bytes) || bytes > match.bytes) {
+          throw new Error('audit artifact exceeds its receipt size')
+        }
+        hash.update(chunk)
+        yield { data: Buffer.from(chunk).toString('base64') }
+      }
+      if (bytes !== match.bytes || hash.digest('hex') !== request.sha256) {
+        throw new Error('audit artifact hash or size differs')
+      }
+    } catch (error) {
+      if (error instanceof RemoteError) throw error
+      throw new RemoteError('session/attachment-invalid', `Unable to verify audit artifact: ${String(error)}`,
+        { reason: 'ATTACHMENT_UNREADABLE' })
     }
   }
 
@@ -613,6 +686,40 @@ function referencedImage(
   return undefined
 }
 
+function referencedAuditArtifact(
+  events: readonly SessionEvent[], eventId: string, sha256: string,
+): { readonly name: string; readonly bytes: number } | undefined {
+  if (!/^[a-f0-9]{64}$/.test(sha256) || eventId.length === 0) return undefined
+  let fact: Record<string, unknown> | undefined
+  let receipt: Record<string, unknown> | undefined
+  for (const event of events) {
+    const entry: { readonly type: string; readonly data: unknown } = event
+    if (entry.type === 'codex/audit-v1' && isRecord(entry.data) && entry.data.eventId === eventId) {
+      if (fact !== undefined) return undefined
+      fact = entry.data
+    }
+    if (entry.type === 'codex/artifact-v1' && isRecord(entry.data) && entry.data.sha256 === sha256) {
+      if (receipt !== undefined) return undefined
+      receipt = entry.data
+    }
+  }
+  if (fact === undefined || receipt === undefined || fact.version !== 1 || receipt.version !== 1
+    || typeof fact.threadId !== 'string' || fact.threadId.length === 0
+    || fact.threadId !== receipt.threadId
+    || typeof receipt.mediaType !== 'string' || receipt.mediaType.length === 0
+    || !Number.isSafeInteger(receipt.bytes) || (receipt.bytes as number) < 0
+    || receipt.name !== `dsh-audit-${sha256}.blob`) return undefined
+  const payload = Object.values(fact).find(value => isRecord(value)
+    && value.kind === 'artifact' && value.sha256 === sha256
+    && value.bytes === receipt.bytes && value.mediaType === receipt.mediaType)
+  return payload === undefined ? undefined : { name: receipt.name, bytes: receipt.bytes as number }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
 function routeServed(ctx: Context, provider: string): boolean {
-  return ctx.llm.listProviders().some(entry => entry.id === provider)
+  return ctx.agents.hasDriverFactory(provider)
+    || ctx.llm.listProviders().some(entry => entry.id === provider)
 }

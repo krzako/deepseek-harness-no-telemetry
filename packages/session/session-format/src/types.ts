@@ -12,6 +12,13 @@ export interface SessionFormatJsonObject {
   readonly [key: string]: SessionFormatJsonValue
 }
 
+/** Portable ancestry stored by current Session headers. */
+export interface SessionFormatImportLineage extends SessionFormatJsonObject {
+  readonly sourceSessionId: string
+  readonly sourceDriverId: string
+  readonly importId: string
+}
+
 /** Logical Session metadata shared by supported historical and current formats. */
 export interface SessionFormatHeader extends SessionFormatJsonObject {
   readonly version: number
@@ -19,6 +26,7 @@ export interface SessionFormatHeader extends SessionFormatJsonObject {
   readonly createdAt: number
   readonly cwd?: string
   readonly parentSession?: string
+  readonly importLineage?: SessionFormatImportLineage
   readonly isSeeded: boolean
   readonly origin?: 'subagent'
   readonly delegationDepth: number

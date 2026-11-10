@@ -1,7 +1,5 @@
 # Session Persistence
 
-English | [中文](persistence.zh.md)
-
 The **durability seam** for the event log. [session.md](session.md) describes the in-memory `Session` — the append-only `SessionEvent` log that is the source of truth. This page describes how that log is made durable: the abstract `SessionPersistence` service, its provider model and shipped JSONL backend, the flush checkpoint, crash recovery, and the metadata header that travels alongside the log. The event vocabulary the log carries is enumerated, member by member, in the generated [persistence log event catalog](../persistence-catalog.md).
 
 The seam is a [capability seam](../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md): one abstract service ([dsh-session-persistence](../../packages/session/session-persistence), `ctx.sessionPersistence`) exposing `create`/`open`/`stat`/`list` over the existing `SessionEvent` — **no parallel persisted event type** — where `create` and `open` return a per-session `SessionHandle` (`read`/`append`/`flush`/`close`) that carries all log access and single-writer ownership. The repository ships [dsh-session-persistence-jsonl](../../packages/session/session-persistence-jsonl) as its provider; out-of-tree providers may implement the same service contract. See the [handle-based persistence Agent Note](../../.agents/notes/implemented/architecture/2026-08-27-handle-based-session-persistence.md) and the [session-persistence Agent Note](../../.agents/notes/implemented/architecture/2026-06-14-session-persistence.md).
@@ -145,6 +143,8 @@ interface SessionHeader {
   readonly cwd?: string
   /** The session this one was forked from (seed lineage), if any. */
   readonly parentSession?: SessionId
+  /** Portable import ancestry; distinct from a fork-inherited event prefix. */
+  readonly importLineage?: SessionImportLineage
   /**
    * Whether this Session contains a fork-inherited event prefix. The exact prefix
    * length is Session state rather than ordinary header metadata.
@@ -173,11 +173,11 @@ interface SessionHeader {
 
 ## Format refusal — logs a build cannot faithfully read
 
-A backend refuses a log it cannot faithfully interpret with `SessionFormatUnsupportedError`, distinct from `SessionPersistenceCorruptionError` because nothing is damaged. `stat` and `list` classify the highest canonical generation and translate a supported historical header without reading or mutating its body. `open` runs the build-static adjacent migration chain under per-id serialization before returning a handle, leaves every source path, byte, and inode unchanged, and exclusively publishes only the final current generation. A future highest generation refuses even when an older readable generation remains. Current v2 restoration retains installed extensions and unknown events carrying `ignorable: true`; historical v0/v1 migration refuses an unknown type even when marked ignorable. The message appends the selected raw log path when the backend keeps one artifact per session. The JSONL backend migrates released v0 or v1 to current v2 and refuses a future version before interpreting its version-specific fields or event rows. An out-of-tree backend must enforce equivalent current-only handle values and direction-aware refusals at its physical-format entry. The [released-format migration decision](../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md) owns the chain and immutable-publication rules.
+A backend refuses a log it cannot faithfully interpret with `SessionFormatUnsupportedError`, distinct from `SessionPersistenceCorruptionError` because nothing is damaged. `stat` and `list` classify the highest canonical generation and translate a supported historical header without reading or mutating its body. `open` runs the build-static adjacent migration chain under per-id serialization before returning a handle, leaves every source path, byte, and inode unchanged, and exclusively publishes only the final current generation. A future highest generation refuses even when an older readable generation remains. Current v3 restoration retains installed extensions and unknown events carrying `ignorable: true`; historical v0/v1 migration refuses an unknown type even when marked ignorable. The message appends the selected raw log path when the backend keeps one artifact per session. The JSONL backend migrates released v0, v1, or v2 to current v3 and refuses a future version before interpreting its version-specific fields or event rows. An out-of-tree backend must enforce equivalent current-only handle values and direction-aware refusals at its physical-format entry. The [released-format migration decision](../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md) owns the chain and immutable-publication rules.
 
 ## `CreateSessionOptions` — seeding and metadata
 
-Creating a `Session` through the store takes a `seed` (initial replay or fork history), an optional exact `inheritedEventCount`, and `meta` (the storage-level fields the store folds into a `SessionHeader`). The store fills in `version`/`id` and defaults `createdAt`; the caller may supply the validated absolute `cwd`, `parentSession` lineage, `isSeeded` lineage bit, optional coarse `origin`, `delegationDepth`, `agentPreset`, and an existing `createdAt`. A seeded creation requires an explicit seed equal to its inherited prefix and an exact cut; the constructor appends the child-owned tagged end-seed marker at that cut before setup adds child-owned events. `origin: 'subagent'` lets product navigation hide duplicate child rows; it does not prove that a descriptor is valid or that the child can resume.
+Creating a `Session` through the store takes a `seed` (initial replay or fork history), an optional exact `inheritedEventCount`, and `meta` (the storage-level fields the store folds into a `SessionHeader`). The store fills in `version`/`id` and defaults `createdAt`; the caller may supply the validated absolute `cwd`, `parentSession` fork lineage or separate `importLineage`, `isSeeded` fork bit, optional coarse `origin`, `delegationDepth`, `agentPreset`, and an existing `createdAt`. A seeded creation requires an explicit seed equal to its inherited prefix and an exact cut; the constructor appends the child-owned tagged end-seed marker at that cut before setup adds child-owned events. Import lineage cannot be combined with fork lineage. `origin: 'subagent'` lets product navigation hide duplicate child rows; it does not prove that a descriptor is valid or that the child can resume.
 
 ```ts type-equiv
 /**
@@ -201,6 +201,7 @@ interface CreateSessionOptions {
   readonly meta?: {
     readonly cwd?: string
     readonly parentSession?: SessionId
+    readonly importLineage?: SessionImportLineage
     readonly createdAt?: number
     readonly isSeeded?: boolean
     readonly origin?: 'subagent'
@@ -313,7 +314,7 @@ The shipped provider implements the abstract `SessionPersistence` contract (`cre
 
 ## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`). Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
 <a id="ctxsessionpersistence--sessionpersistence-abstract-seam"></a>
 
@@ -336,6 +337,14 @@ Freshness: once an `append` or `flush` resolves, reads started afterwards on thi
  * @throws {SessionAlreadyExistsError} when the id already exists.
  */
 abstract create(header: SessionHeader, options?: SessionPersistenceCreateOptions): Promise<SessionHandle>
+
+/** Begin a durable, hidden import with exclusive ownership of a fresh id.
+ * Providers without transactional import must refuse before creating anything.
+ * @param header - fresh Session metadata with import lineage.
+ * @param options - inherited cut and optional cancellation.
+ * @returns the transaction owning its write handle and publication boundary.
+ */
+beginImport(header: SessionHeader, options?: SessionPersistenceCreateOptions): Promise<SessionImportTransaction>
 
 /**
  * Open an existing stored session.
@@ -393,3 +402,9 @@ Types: [SessionId](core.md)
 
 Source: [`packages/session/session-persistence/src/index.ts`](../../packages/session/session-persistence/src/index.ts)
 <!-- END GENERATED cordis-surface -->
+
+## Transactional Session import
+
+`SessionPersistence.beginImport` returns a `SessionImportTransaction` for a fresh identity with import lineage. Its handle flushes durably while ordinary readers cannot list, inspect or open the pending Session. `publish` durably exposes the log and invokes a synchronous registry-publication callback; callback failure restores the pending fence before rejection. `rollback` closes and removes only the uncommitted import, reports cleanup failures, and refuses to remove a successfully published Session. Backends without this capability reject before creation. JSONL retains a hidden reservation after process death; automatic promotion or deletion of that reservation is forbidden. This prevents a partially initialized import from becoming a normal resumable Session.
+
+JSONL maintenance uses `inspectPendingImports()` for read-only byte inventories and unknown outcomes. `recoverPendingImport(report, action)` requires a matching revision and the kernel write lease. `retain` preserves uncertain logs and the hidden ID reservation; continuation uses a fresh archive import to a new ID after operator review. `discard-empty` removes only a verified marker with no log or other data, keeping the lock inode. Reports alone never prove owner death or successful external effects. No maintenance method resumes a Session or supplies HTTP authorization.

@@ -441,3 +441,8 @@ export interface GenerateOptions {
    */
   purpose?: 'compaction' | 'session-title'
 }
+
+/** Local authentication facts only; configured means present, not remotely validated. */
+export type LlmAuthenticationInfo =
+  | { readonly status: 'configured' | 'missing'; readonly reference: string }
+  | { readonly status: 'provider-managed' | 'unverified' }

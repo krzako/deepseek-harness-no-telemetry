@@ -1,5 +1,5 @@
 /**
- * Zero-dependency atomic file replacement and writer coordination.
+ * Atomic file replacement with optional durable publication and writer coordination.
  * `writeFileAtomic` writes a random-suffix sibling with exclusive create and
  * the caller's permission bits, then renames it over the target, so readers
  * observe either the old or the new complete content and a replaced file ends
@@ -11,8 +11,9 @@
  */
 
 import { randomBytes } from 'node:crypto'
-import { lstat, mkdir, rename, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, open, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { replaceAtomicFileWin32, syncAtomicParent } from './durable.ts'
 
 const WINDOWS_TRANSIENT_RENAME_ERRORS: ReadonlySet<string> = new Set(['EACCES', 'EBUSY', 'EPERM'])
 const WINDOWS_RENAME_RETRY_INITIAL_MS = 20
@@ -26,11 +27,12 @@ function isTransientWindowsRenameError(error: unknown): boolean {
 }
 
 /** Replace the target after bounded retries for transient Windows interference. */
-async function renameAtomicTemp(temp: string, filename: string): Promise<void> {
+async function renameAtomicTemp(temp: string, filename: string, durable: boolean): Promise<void> {
   let delay = WINDOWS_RENAME_RETRY_INITIAL_MS
   for (let retries = 0;; retries += 1) {
     try {
-      await rename(temp, filename)
+      if (durable && process.platform === 'win32') await replaceAtomicFileWin32(temp, filename)
+      else await rename(temp, filename)
       return
     } catch (error) {
       if (!isTransientWindowsRenameError(error)) throw error
@@ -46,6 +48,11 @@ async function renameAtomicTemp(temp: string, filename: string): Promise<void> {
  * permission decision stays visible at every call site.
  */
 export interface WriteFileAtomicOptions {
+  /** Flush payload and namespace before success. Requires an existing parent;
+   * directory creation and ancestor durability remain the caller's responsibility.
+   * @default false
+   */
+  durable?: boolean
   /**
    * Permission bits stamped on the fresh temp inode and carried through the
    * rename (subject to the process umask, like every fresh inode).
@@ -70,25 +77,46 @@ export interface WriteFileAtomicOptions {
  * one filesystem. Windows replacement retries transient `EACCES`, `EBUSY`,
  * and `EPERM` failures for a bounded interval while the complete temp file
  * remains the rename source. On any remaining failure the temp file is
- * removed and the failure rethrown. Crash durability (fsync) is out of scope.
+ * removed and the failure rethrown. With durable=true the parent must exist:
+ * payload fsync precedes replacement, followed by POSIX parent fsync or native
+ * Windows write-through publication. A failure after replacement reports
+ * AtomicWriteDurabilityError; the new target remains visible, never rolled back.
  * @param filename - final path receiving the content.
  * @param content - complete next file content.
  * @param options - permission bits for the replacement inode.
  */
 export async function writeFileAtomic(filename: string, content: string, options: WriteFileAtomicOptions): Promise<void> {
-  await mkdir(dirname(filename), {
+  if (options.durable !== true) await mkdir(dirname(filename), {
     recursive: true,
     ...options.dirMode === undefined ? {} : { mode: options.dirMode },
   })
-  // TODO(settings-atomic-durability): Use a replacement that fsyncs the file
-  // and parent directory and preserves owner-only permissions on Windows.
   const temp = `${filename}.${randomBytes(6).toString('hex')}.tmp`
+  let published = false
   try {
-    await writeFile(temp, content, { mode: options.mode, flag: 'wx' })
-    await renameAtomicTemp(temp, filename)
-  } catch (error) {
-    await rm(temp, { force: true })
+    if (options.durable === true) {
+      const handle = await open(temp, 'wx', options.mode)
+      try { await handle.writeFile(content); await handle.sync() } finally { await handle.close() }
+    } else await writeFile(temp, content, { mode: options.mode, flag: 'wx' })
+    await renameAtomicTemp(temp, filename, options.durable === true)
+    published = true
+    if (options.durable === true && process.platform !== 'win32') await syncAtomicParent(dirname(filename))
+  } catch (error: unknown) {
+    if (published) throw new AtomicWriteDurabilityError(filename, error)
+    try { await rm(temp, { force: true }) } catch (cleanup: unknown) {
+      throw new AggregateError([error, cleanup], 'atomic file replacement failed and temporary cleanup failed', { cause: error })
+    }
     throw error
+  }
+}
+
+/** Replacement is visible, but its final durability barrier failed. */
+export class AtomicWriteDurabilityError extends Error {
+  /** Destination already published; callers must inspect rather than assume rollback. */
+  readonly published = true
+  /** @param path - published destination. @param cause - failed durability barrier. */
+  constructor(readonly path: string, cause: unknown) {
+    super('atomic replacement published but durability is unconfirmed', { cause })
+    this.name = 'AtomicWriteDurabilityError'
   }
 }
 

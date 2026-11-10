@@ -120,6 +120,11 @@ export class FixtureSession implements SessionFace {
     throw new Error(`test session "${this.sessionId}": readAttachment is not stubbed — supply it on the fixture's session face`)
   }
 
+  /** Fail-loud stub; supply this method on the fixture when testing audit artifacts. */
+  readAuditArtifact(): never {
+    throw new Error(`test session "${this.sessionId}": readAuditArtifact is not stubbed — supply it on the fixture's session face`)
+  }
+
   /**
    * Fail-loud stub; supply `updateQueue` on the fixture's session face to exercise it.
    * @returns never — always throws.

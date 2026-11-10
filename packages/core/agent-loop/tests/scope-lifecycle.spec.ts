@@ -784,7 +784,9 @@ describe('agent scope lifecycle', () => {
     expect(statuses).toEqual([])
     expect(observerSawLive).toBe(true)
     expect(scopeDisposed).toBe(true)
-    expect(announced.session.snapshotEvents()).toEqual([])
+    expect(announced.session.snapshotEvents()).toEqual([expect.objectContaining({
+      type: 'agent/driver-selected', data: { version: 1, driverId: 'standard' },
+    })])
     expect(ctx.agents.get(SessionId('session-start-dispose-s'))).toBeUndefined()
     expect(ctx.sessions.get(SessionId('session-start-dispose-s'))).toBeUndefined()
     await ctx.fiber.dispose()

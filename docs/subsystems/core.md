@@ -1,7 +1,5 @@
 # Core
 
-English | [中文](core.zh.md)
-
 The **core** subsystem is [`packages/core`](../../packages/core/README.md) — the packages every composition boots: the event-sourced session log, system-prompt assembly, the tool registry, the agent types, and the concrete loop that drives them. This page explains what the `agent`/`agent-loop` pair declares — how an agent is created and owned, and the `Agent` handle's delivery, cancellation, and interception contracts — plus the two type patterns every subsystem follows. The group's dedicated pages and the rest of the folder are indexed in the [subsystems README](README.md).
 
 ## The spine, package by package
@@ -18,6 +16,20 @@ A turn flows through the six packages in one loop: the driver in [`agent-loop`](
 | `scope/` | The scoped-registration primitive the registries and loop build per-agent scoping on | [scope.md](scope.md) |
 
 `scope/` is the one non-service package: a dependency-free library (`createScope`/`scopeOf`/`scopeTarget`) that sits below `session/` and `system-prompt/` in the module graph precisely so they can consume it without a cycle. `agent-loop` is the one concrete implementation of the public `Agent` contract and lives here because it is the harness's default product loop; it runs each driver inside `ctx.agents.withInitiator()`. Extension plugins depend on `agent` — including when they need the initiating Agent — and never on `agent-loop` directly, so the loop stays swappable. [`dsh-base`](../../packages/bundle/base/README.md) is the default product composition, while [`dsh-sdk-minimal`](../../packages/bundle/sdk-minimal/README.md) declares a smaller standalone tree.
+
+`AgentTraceCorrelationV1` identifies a physical model attempt or model-issued tool call by DSH `sessionId`, driver key, optional driver thread/turn ids, and DSH turn/step ids. `agentTraceTurnId` and `agentTraceStepId` derive stable ids from one-based turn/step numbers; a model retry keeps the step but uses a new `modelAttemptId`, while reconnect to the same request or tool call keeps its operation id. `assertAgentTraceContinuation` refuses drift in any parent identity and does not authorize an implicit tool retry. These values describe correlation only; they do not persist an audit event by themselves.
+
+`AgentDriverStateV1` separates the selected driver from the model route and records import lineage. `PortableAgentContextV1` keeps ordered historical items, an ordered effective projection after compaction, and references to compaction inputs and outputs. A private checkpoint is namespaced by driver and schema version. `assessPortableImportV1` compares the explicitly selected destination model and target capabilities with the context; an unavailable selected model is blocking, while a model change requires acknowledgment and makes a source-model private checkpoint inapplicable. It also reports unsupported opaque content and driver changes without mutating or importing a Session.
+
+`PortableAgentContextStreamV1` carries the same V1 context fields as single-consumption async sequences. `PortableAgentStreamBundleV1` combines it with an optional resident or streamed private checkpoint. The streamed form carries source-validated context JSON, its byte count and SHA-256; the ZIP encoder verifies the latter two after copying the bytes into the shared private envelope. The archive encoder validates items as they arrive, retains identifiers for later reference checks, and emits JSON without a resident item array. The ZIP route prefers a driver's optional streaming source method while import preview and drivers without that method use the required resident export. The standard source derives each item from a frozen Session event snapshot during ZIP consumption.
+
+`AgentDriverRoute` distinguishes `create`, `resume`, and `import`; the latter names the destination driver instead of consulting the fresh-session policy. `AgentTransferSourcePort` exports the canonical context and requires `exportArchivedContext(ArchivedAgentSource)` to project a detached archive Session with a supplied content-addressed artifact reader. `verifyArchivedAgentContext()` compares that projection with the complete archived bundle without invoking a destination. `AgentTransferTargetPort` declares capabilities and accepts an import, and `prepareAgentTransfer()` validates both identities and the chosen destination model, produces the compatibility assessment, and invokes the destination at most once after required acknowledgment. Capability lookup may be asynchronous and runs again at commit, so a model removed after preview cannot be imported. The coordinator passes the chosen model to the destination port and returns its preparation; it does not publish a Session.
+
+The target port’s `describeAuthentication(model)` returns local [LLM authentication metadata](llm-streaming.md#local-authentication-metadata), separately from context compatibility and without credential values. Archive preview reads it only for an available target model.
+
+Resolved attachment references are supplied per transfer, snapshotted during preview, and passed to the target port at commit; the registered driver port does not own one archive's attachment set.
+
+The live lifecycle commits `agent/driver-selected` with a stable `driverId` before external driver startup and validates that identity on resume. The standard loop uses `standard`; the Codex implementation uses `codex` regardless of provider/model route. A changed setting cannot replace the persisted driver for an existing Session.
 
 ## Creation and ownership
 
@@ -71,6 +83,9 @@ interface Agent {
   readonly status: AgentStatus
   /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
   readonly ctx: Context
+
+  /** Optional driver capability: select the model used by subsequent turns of this live Agent. */
+  selectModelForNextTurn?(model: string, reasoningEffort?: ReasoningEffortId): void
 
   /**
    * Clear queued and steering work — unless `keepInbox` — and abort the active
@@ -358,7 +373,7 @@ The two core IDs are `ToolCallId` (correlates a tool call with its result; dsh-l
 
 ## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`). Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
 <a id="ctxagentdefaultmodel--agentdefaultmodelconfig"></a>
 
@@ -739,6 +754,68 @@ withoutInitiator<T>(operation: () => T): T
 setFactory(factory: AgentFactory): () => void
 
 /**
+ * Register one exact `AgentOptions.provider` route as a full turn driver.
+ * The driver must register matching canonical source and target ports first.
+ * @param provider - exact provider selector carried by AgentOptions.
+ * @param factory - driver constructor for that route.
+ * @returns effect-scoped disposer that removes this exact registration.
+ */
+setDriverFactory(provider: string, factory: AgentDriverFactory): () => void
+
+/**
+ * Register both canonical transfer directions for one full-agent driver.
+ * The registration follows the caller's effect lifetime; driver selection
+ * and transfer lookup use the same stable driver id, not provider names.
+ * @param driverId - stable full-agent driver identity.
+ * @param ports - matching source and target ports for the shared DSH format.
+ * @returns effect-scoped disposer for this exact registration.
+ */
+setTransferPorts<Result>(driverId: string, ports: AgentTransferPorts<Result>): () => void
+
+/**
+ * Resolve both directions for a full-agent driver before transfer preview.
+ * @param driverId - recorded or explicitly selected driver identity.
+ * @returns registered canonical transfer ports.
+ */
+getTransferPorts(driverId: string): AgentTransferPorts
+
+/** Register the one policy that may select a full driver for an ordinary provider route.
+ * The driver's canonical source and target ports must already be registered.
+ * @param selector - decision invoked after exact driver routes and before the ordinary loop.
+ * @returns the effect-scoped disposer that removes this policy.
+ */
+setDriverSelector(selector: AgentDriverSelector): () => void
+
+/** Whether a full-agent driver owns this exact provider route.
+ * @param provider - exact provider route to check.
+ * @returns true when a full-agent driver is registered for the route.
+ */
+hasDriverFactory(provider: string): boolean
+
+/** Detached selector metadata for registered full-agent routes.
+ * @returns catalogs whose nested model metadata can be read without mutating registrations.
+ */
+listDriverCatalogs(): readonly (AgentDriverCatalog & { readonly id: string })[]
+
+/** Resolve one advertised full-agent model, returning undefined for an LLM route.
+ * @param provider - exact full-agent provider route.
+ * @param model - advertised model ID for that route.
+ * @returns the model metadata, or undefined when the provider belongs to the ordinary LLM loop.
+ */
+resolveDriverModel(provider: string, model: string): AgentDriverCatalog['models'][number] | undefined
+
+/**
+ * Create the selected alternative driver, or return undefined for the default React loop.
+ * @param ctx - lifecycle context supplied to the driver.
+ * @param id - shared Agent and Session identity.
+ * @param options - provider selection and driver options.
+ * @param session - prepared, unpublished Session owned by the lifecycle factory.
+ * @param route - current-policy creation, persisted resume, or explicit import target.
+ * @returns the selected driver, or undefined when the default loop owns the route.
+ */
+createDriver(ctx: Context, id: SessionId, options: AgentOptions, session: import('@deepseek-ai/dsh-session').Session, route: AgentDriverRoute = { kind: 'create' }): AgentDriver | undefined
+
+/**
  * Create and publish a new agent through the registered factory.
  * Distinct from {@link register} (which records an already-constructed
  * agent): this constructs the agent and its session. Rejects if no factory is
@@ -835,6 +912,8 @@ list(): Agent[]
  */
 roots(): Agent[]
 ```
+
+Types: [Session](session.md)
 
 Source: [`packages/core/agent/src/index.ts`](../../packages/core/agent/src/index.ts)
 

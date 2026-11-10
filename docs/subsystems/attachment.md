@@ -1,7 +1,5 @@
 # Durable Attachments
 
-English | [中文](attachment.zh.md)
-
 The attachment seam separates binary image and generic-file ownership from the session log. A producer gives bytes to [`ctx.attachments`](#ctxattachments--attachmentstore-abstract-seam); the service publishes an immutable content-addressed reference only after the object is durable. Session events and model-visible attachment blocks contain that reference and metadata, never a browser object URL, host temporary path, provider URL, or base64 payload. The independent [`ctx.fileUploads`](#ctxfileuploads--fileuploads) service binds browser file transfers and staged receipts to the receiving Agent.
 
 Unsent browser drafts may stay in memory and native clients may stage them in operating-system temporary storage. Browser generic files become durable before they receive a staged prompt receipt. Once the host accepts a user message, its images move below `<DSH_HOME>/attachments/v1` before the user event is appended. Structured model image output follows the same persist-before-event rule.
@@ -165,7 +163,7 @@ interface RequestImageAttachment {
 
 ## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`). Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
 <a id="ctxattachments--attachmentstore-abstract-seam"></a>
 
@@ -222,6 +220,16 @@ isAttachmentError(error: unknown): error is AttachmentError
  * @returns the durable content-addressed normalized image reference.
  */
 abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
+
+/** Restore archived image bytes and their reference without normalization.
+ * Providers must verify digest, byte count, declared metadata and full decode
+ * before durable publication; configured admission limits may reject explicitly.
+ * This does not append Session history or replay historical work.
+ * @param input - exact archived bytes and original durable reference.
+ * @param signal - cancellation before the provider begins atomic publication.
+ * @returns the unchanged durable reference after successful publication.
+ */
+restoreImage(input: StoredImageAttachment, signal?: AbortSignal): Promise<ImageAttachmentRef>
 
 /**
  * Read one image and verify that bytes still match the recorded reference.

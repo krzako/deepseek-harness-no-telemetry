@@ -4,6 +4,14 @@ import type {
   RequestView, RunningToolCall, ToolCallBlock,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { CodexAuditEventV1 } from '@deepseek-ai/dsh-agent-codex'
+
+/** One durable Codex fact, ordered by its DSH Session sequence. */
+export interface TrajectoryCodexAuditFact {
+  readonly seq: number
+  readonly time: number
+  readonly fact: CodexAuditEventV1
+}
 
 /** Request-header facts retained by the Trajectory target. */
 export interface TrajectoryRequestHeaderState {
@@ -39,6 +47,10 @@ export type TrajectoryContribution =
     readonly request: Extract<RequestView, { purpose: 'compaction' }>
   }
   | {
+    readonly kind: 'codex-audit'
+    readonly audit: TrajectoryCodexAuditFact
+  }
+  | {
     readonly kind: 'session-end'
     readonly seq: number
     readonly time: number
@@ -67,6 +79,8 @@ export interface TrajectorySnapshot {
   readonly callSchemas: ReadonlyMap<string, ConversationPromptSnapshot['tools'][number]>
   readonly partial: PartialAssistant | null
   readonly runningCalls: readonly RunningToolCall[]
+  /** Codex audit is separate from Chat messages and standard-agent request rows. */
+  readonly codexAuditFacts?: readonly TrajectoryCodexAuditFact[]
 }
 
 /** Selector hook over the current Conversation binding's Trajectory target. */

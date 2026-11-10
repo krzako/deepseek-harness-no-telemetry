@@ -338,3 +338,12 @@ describe('imageRequestPricing resolution', () => {
     expect(ctx.llm.imageRequestPricing('a', 'vision')).toBeUndefined()
   })
 })
+
+it('reports unverified authentication for an adapter without an inspector and rejects absent routes', async () => {
+  const ctx = await setup()
+  try {
+    ctx.llm.registerAdapter(['plain'], new NoopAdapter())
+    await expect(ctx.llm.describeAuthentication('plain', 'model')).resolves.toEqual({ status: 'unverified' })
+    await expect(ctx.llm.describeAuthentication('absent', 'model')).rejects.toThrow('no adapter')
+  } finally { await ctx.fiber.dispose() }
+})

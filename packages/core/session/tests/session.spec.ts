@@ -162,6 +162,21 @@ describe('Session', () => {
     expect(reopened.snapshotEvents()).toEqual(resumed.snapshotEvents())
   })
 
+  it('does not add a second seed boundary when restoring live events after the marker', () => {
+    const original = Session.create(SessionId('restore-after-seed'), [])
+    original.append('turn/start', { turn: 1 })
+    original.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    const restored = Session.fromRestore(
+      original.id,
+      original.snapshotEvents(),
+      original.header,
+      original.inheritedEventCount,
+    )
+    expect(restored.snapshotEvents()).toEqual(original.snapshotEvents())
+    expect(restored.firstLiveSeq).toBe(original.seq)
+  })
+
   it('rejects pre-provider request headers and assistant messages on seed/load', () => {
     const requestHeader = {
       type: 'request/header', seq: 0, time: 1,
@@ -1190,6 +1205,10 @@ describe('Session', () => {
       { header: { ...base, cwd: 1 }, error: /header cwd must be a string/ },
       { header: { ...base, cwd: 'relative' }, error: /header cwd must be an absolute path/ },
       { header: { ...base, parentSession: 1 }, error: /header parentSession must be a string/ },
+      { header: { ...base, importLineage: null }, error: /header importLineage must be a record/ },
+      { header: { ...base, importLineage: { sourceSessionId: 'source', sourceDriverId: '', importId: 'id' } }, error: /header importLineage must contain/ },
+      { header: { ...base, importLineage: { sourceSessionId: 'header-shape', sourceDriverId: 'standard', importId: 'id' } }, error: /import source must differ/ },
+      { header: { ...base, parentSession: 'fork', importLineage: { sourceSessionId: 'source', sourceDriverId: 'standard', importId: 'id' } }, error: /cannot be combined with fork lineage/ },
       { header: { ...base, isSeeded: 'yes' }, error: /isSeeded must be a boolean/ },
       { header: { ...base, seedLength: 1 }, error: /invalid field "seedLength"/ },
     ]
@@ -1433,6 +1452,19 @@ describe('SessionStore', () => {
       parentSession: 'parent',
       isSeeded: false,
     })
+  })
+
+  it('keeps import ancestry separate from fork lineage in the durable header', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const id = SessionId('imported-child')
+    const lineage = { sourceSessionId: SessionId('source'), sourceDriverId: 'codex', importId: 'transfer-1' }
+    const session = ctx.sessions.create(id, { meta: { importLineage: lineage } })
+    expect(session.header.importLineage).toEqual(lineage)
+    expect(session.header.isSeeded).toBe(false)
+    expect(session.header.parentSession).toBeUndefined()
+    expect(Session.fromRestore(id, session.snapshotEvents(), structuredClone(session.header), SessionLogOffset(0)).header.importLineage)
+      .toEqual(lineage)
   })
 
   it('attaches subagent origin and delegationDepth from meta to the header', async () => {

@@ -801,14 +801,14 @@ describe('compat switches', () => {
     // a switch they cannot read is refused where it is written, not dropped.
     expect(() => resolveProfiles({
       anthropic: {
-        models: [{ id: 'claude-sonnet-4-5', compat: { sendSessionAffinityHeaders: true } as never }],
+        models: [{ id: 'claude-sonnet-4-5', compat: { sendSessionAffinityHeaders: true } }],
       },
     })).toThrow(/its api is "anthropic-messages", which does not take it.*exists on openai-completions/s)
   })
 
   it('refuses a route affinity switch no model on the route can take', () => {
     expect(() => resolveProfiles({
-      anthropic: { compat: { sendSessionAffinityHeaders: true } as never },
+      anthropic: { compat: { sendSessionAffinityHeaders: true } },
     })).toThrow(/no model on the route speaks a protocol that takes it.*exists on openai-completions/s)
   })
 
@@ -1250,4 +1250,17 @@ describe('configurable-provider directory', () => {
       declared: false,
     })
   })
+})
+
+it('describes named environment credentials and keeps provider-managed auth unverified', async () => {
+  const ctx = await harness({ providers: { deepseek: { apiKeyEnv: KEY_ENV }, openai: {} } })
+  try {
+    await expect(ctx.llm.describeAuthentication('deepseek', 'deepseek-chat'))
+      .resolves.toEqual({ status: 'configured', reference: KEY_ENV })
+    vi.stubEnv(KEY_ENV, '')
+    await expect(ctx.llm.describeAuthentication('deepseek', 'deepseek-chat'))
+      .resolves.toEqual({ status: 'missing', reference: KEY_ENV })
+    await expect(ctx.llm.describeAuthentication('openai', 'gpt-4o'))
+      .resolves.toEqual({ status: 'provider-managed' })
+  } finally { await ctx.fiber.dispose() }
 })

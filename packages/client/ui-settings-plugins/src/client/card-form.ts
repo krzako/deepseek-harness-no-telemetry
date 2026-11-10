@@ -145,6 +145,20 @@ export function textField(field: string): CardFieldSpec {
   }
 }
 
+/** A persisted on/off field controlled by a staged switch.
+ * @param field - field name inside the settings section.
+ * @returns the switch's conversion spec.
+ */
+export function booleanField(field: string): CardFieldSpec {
+  return {
+    field,
+    format: value => value === true ? 'true' : 'false',
+    parse: text => text === 'true' || text === 'false'
+      ? { kind: 'set', value: text === 'true' }
+      : undefined,
+  }
+}
+
 /**
  * Stages one card's edits over one settings namespace and writes them on save.
  *

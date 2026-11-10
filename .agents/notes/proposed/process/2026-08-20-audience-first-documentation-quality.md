@@ -2,11 +2,9 @@
 
 Status: proposed
 
-English | [中文](2026-08-20-audience-first-documentation-quality.zh.md)
-
 ## Problem
 
-The documentation system has strong placement, freshness, linking, bilingual, and source-equivalence checks, but it does not define “brief, intuitive, and friendly” as reviewable outcomes for users, newcomers, developers, and agents. All `doc-sync` checks and translation pairs pass, while the following design problems remain. The first three findings are the design priorities; the capacity finding explains why adding more standing rules will not solve them.
+The documentation system has strong placement, freshness, linking, and source-equivalence checks, but it does not define “brief, intuitive, and friendly” as reviewable outcomes for users, newcomers, developers, and agents. The following design problems remain. The first three findings are the design priorities; the capacity finding explains why adding more standing rules will not solve them.
 
 ### Semantic correctness can pass without a current owner
 
@@ -32,9 +30,9 @@ The standing documentation file is 1,320 words against a 1,320-word ceiling and 
 
 ### Baseline
 
-The audit excludes `vendor/`, frozen `.agents/notes/archived/`, recorded snapshots, and fixtures. It counts 1,042 English Markdown files and 986 Chinese counterparts in the maintained corpus, with 1,106,138 English words. Active Agent Notes account for 580 files and 637,850 words; Markdown under `packages/` accounts for 276 files and 225,630 words; `docs/` accounts for 112 files and 193,456 words. These quantities describe maintenance and retrieval pressure, not defects by themselves.
+The historical audit excluded `vendor/`, frozen `.agents/notes/archived/`, recorded snapshots, and fixtures. It counted 1,042 English Markdown files and 1,106,138 English words before the single-source documentation policy. These quantities described maintenance and retrieval pressure, not defects by themselves.
 
-The system’s strongest properties should remain: one fact owner by tier, canonical Markdown projected into the website without copies, complete bilingual pairing, generated catalogs that fail when source changes, type-equivalent declarations, compilable TypeScript examples, checked links and anchors, and package-local model-experience and limitation contracts. The proposal changes quality criteria and entry structure, not those guarantees.
+The system’s strongest properties should remain: one fact owner by tier, canonical Markdown projected into the website without copies, generated catalogs that fail when source changes, type-equivalent declarations, compilable TypeScript examples, checked links and anchors, and package-local model-experience and limitation contracts. The proposal changes quality criteria and entry structure, not those guarantees.
 
 ## Proposal
 
@@ -120,16 +118,14 @@ This proposal does not shorten exhaustive facts, merge audience tiers, publish i
 - The root user path, Web quick start, first-plugin tutorial, contributor setup, and architecture overview each name an observable outcome and a verification owner without duplicating implementation detail.
 - The budget manifest records both target and temporary ceiling, and its check reports or rejects a violated headroom/ratchet state.
 - The docs-site workflow contains no copied invalid sidebar name or section-owner claim, and a focused test prevents recurrence.
-- The sidecar remains the single consistency record because it preserves equal authority, last-confirmed-text recovery, automatic merge safety, generated-region recording, and archive sealing without creating owner-file conflicts.
 - An accepted repository-root link form renders correctly on GitHub and the documentation site and remains locally target/anchor checked before relative links are migrated.
-- One large standalone catalog and one mixed subsystem page demonstrate a compact entry layer and lower measured lookup cost while preserving exhaustive generated truth, stable links, bilingual pairing, and deterministic freshness.
+- One large standalone catalog and one mixed subsystem page demonstrate a compact entry layer and lower measured lookup cost while preserving exhaustive generated truth, stable links, and deterministic freshness.
 - `pnpm run doc-sync`, `pnpm run lint`, the focused new checks, and `git diff --check` pass.
 
 ## Risks
 
-- Metadata can become boilerplate; the package README check therefore permits only fields with current retrieval, template-selection, or bilingual-consistency consumers.
+- Metadata can become boilerplate; the package README check therefore permits only fields with current retrieval or template-selection consumers.
 - Hard sentence limits can fragment explanations or separate a condition from its consequence. The controlled-English word counts remain review prompts, and exact contracts override them.
-- Exact line alignment can pressure translators into unnatural prose; review must protect meaning and may revise both sides together rather than weaken one.
 - Splitting generated references can increase routes and link maintenance; prototypes must preserve aliases and measure the trade-off.
 - A semantic check can become a repository-topology scanner that blocks legitimate changes; checks should cover high-risk copied values and representative journeys, while review owns prose meaning.
 - Package README quick-reference tables manually repeat selected configuration defaults; until a source-driven check owns them, reviewers must verify changed values against source and the generated config catalog and keep the tables selected rather than exhaustive.

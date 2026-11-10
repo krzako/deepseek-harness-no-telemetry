@@ -449,6 +449,56 @@ export function normalizeSessionSnapshots(
 }
 
 /**
+ * Compare a current standard-driver run with a pinned pre-driver-selection
+ * fixture. Only the new leading selection event and its one-position shift of
+ * declared same-session references are projected away. All model and tool
+ * payloads remain byte-for-byte comparison inputs.
+ * @param snapshot - current Session JSONL snapshot.
+ * @returns text comparable with the pinned pre-selection fixture.
+ */
+export function projectPreDriverSelectionSnapshot(snapshot: string): string {
+  const lines = snapshot.trimEnd().split('\n')
+  const records = lines.map(line => JSON.parse(line) as Record<string, unknown>)
+  const selection = records[1]
+  if (selection?.['type'] !== 'agent/driver-selected'
+    || JSON.stringify(selection['data']) !== JSON.stringify({ version: 1, driverId: 'standard' })) {
+    throw new Error('historical snapshot comparison requires a leading standard driver selection')
+  }
+  const shift = (value: unknown): number => {
+    if (!Number.isSafeInteger(value) || (value as number) < 1) {
+      throw new Error('historical snapshot contains a reference to the selected driver event')
+    }
+    return (value as number) - 1
+  }
+  const shiftList = (value: unknown): number[] => {
+    if (!Array.isArray(value)) throw new Error('historical snapshot has an invalid sequence list')
+    return value.map(shift)
+  }
+  records.splice(1, 1)
+  for (const event of records.slice(1)) {
+    if (event['sourceEventSeqs'] !== undefined) event['sourceEventSeqs'] = shiftList(event['sourceEventSeqs'])
+    const operation = event['surfaceOp']
+    if (operation !== null && typeof operation === 'object' && !Array.isArray(operation)) {
+      const range = operation as Record<string, unknown>
+      if (range['op'] === 'replace') event['surfaceOp'] = { ...range, start: shift(range['start']), end: shift(range['end']) }
+    }
+    const data = event['data']
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) continue
+    const payload = data as Record<string, unknown>
+    if (event['type'] === 'session/title' || event['type'] === 'session/title-llm-request') {
+      payload['messageSeqs'] = shiftList(payload['messageSeqs'])
+    } else if (event['type'] === 'command/done' && payload['sourceEventSeq'] !== undefined) {
+      payload['sourceEventSeq'] = shift(payload['sourceEventSeq'])
+    } else if (event['type'] === 'compaction/prune' || event['type'] === 'compaction/summary') {
+      const range = payload['shadowedRange'] as Record<string, unknown>
+      payload['shadowedRange'] = { ...range, start: shift(range['start']), end: shift(range['end']) }
+      payload['shadowedSeqs'] = shiftList(payload['shadowedSeqs'])
+    }
+  }
+  return `${records.map(record => JSON.stringify(record)).join('\n')}\n`
+}
+
+/**
  * Omit only generation-qualified operational provenance from expected-output comparison.
  * @param rawLog - Session records or events as compact JSON lines.
  * @returns the same records without delivery or captured-source generation qualifiers.

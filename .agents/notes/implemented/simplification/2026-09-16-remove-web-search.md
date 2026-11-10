@@ -2,8 +2,6 @@
 
 Status: implemented
 
-English | [中文](2026-09-16-remove-web-search.zh.md)
-
 ## Problem
 
 The shipped harness still offered a web-search tool and a DeepSeek search endpoint in plugin settings after related external integrations were removed. That route could send prompts to an additional model-backed search API and added credentials, configuration, providers, UI, and tests for a capability this deployment does not need.

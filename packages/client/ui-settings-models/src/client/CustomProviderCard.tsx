@@ -1,7 +1,7 @@
 /**
- * The card that declares a provider pi-ai does not ship — an OpenAI-compatible
- * gateway, a self-hosted server, or a provider newer than the installed
- * catalog.
+ * The card that declares a custom pi-ai or Codex provider. Both families use
+ * the same profile and credential write path, but only pi-ai asks the endpoint
+ * for its model list and only Codex names an optional API format.
  *
  * This is a create, not an edit, which is why it is its own card rather than
  * the provider editor with extra fields: the route id is being *chosen* here,
@@ -10,9 +10,8 @@
  * through `credentials/set` under the reference the profile records, exactly as
  * an existing provider's key does.
  *
- * The three fields a hand-declared route cannot default — endpoint, protocol,
- * and at least one model — are required here rather than at load, so the
- * failure names the field while the user is still looking at it.
+ * Endpoint and at least one model are required; pi-ai also requires a
+ * protocol. Codex omits its default Chat Completions format from storage.
  *
  * There is deliberately no reasoning-effort control, here or on the editor
  * card: effort is a per-MODEL capability, and the models under one provider
@@ -34,8 +33,8 @@ import type { ModelsOperations } from './operations.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
-/** The settings namespace a hand-declared provider is written into. */
-const NS = 'llm-pi-ai'
+/** Settings families whose profiles describe complete custom providers. */
+type CustomProviderFamily = 'pi-ai' | 'codex'
 
 /**
  * A route id usable as a settings key AND as the stem of a credential name.
@@ -49,12 +48,14 @@ const ROUTE_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 
 /** Props of {@link CustomProviderCard}. */
 export interface CustomProviderCardProps {
+  /** Profile family; omission keeps the existing pi-ai create flow. */
+  family?: CustomProviderFamily
   /** Route ids already declared, so the card refuses to shadow one. */
   taken: readonly string[]
-  /** Wire protocols the adapter can serve, in the order it reports them. */
+  /** Pi-ai wire protocols in adapter order; unused for Codex. */
   protocols: readonly string[]
   /**
-   * Revision of the `llm-pi-ai` user section this card opened at, sent with
+   * Revision of the selected settings section this card opened at, sent with
    * the create so a route another tab declared meanwhile is a refusal rather
    * than a silent overwrite of its whole profile.
    */
@@ -76,12 +77,15 @@ export interface CustomProviderCardProps {
  */
 export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const { taken, protocols, operations, t } = props
+  const family = props.family ?? 'pi-ai'
+  const ns = family === 'codex' ? 'codex' : 'llm-pi-ai'
   // The write is checked against the revision on which this draft was opened.
   const [openedAt] = useState(() => props.revision)
   const [route, setRoute] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [baseURL, setBaseURL] = useState('')
   const [protocol, setProtocol] = useState(protocols[0] ?? '')
+  const [apiFormat, setApiFormat] = useState<'chat-completions' | 'responses'>('chat-completions')
   const [keyDraft, setKeyDraft] = useState('')
   const [models, setModels] = useState<readonly ModelDraft[]>([])
   const [busy, setBusy] = useState(false)
@@ -108,7 +112,8 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   // legitimately authenticate through the provider's own ambient discovery.
   const keyValue = keyDraft.trim()
   const ready = route.length > 0 && !routeInvalid && !routeTaken
-    && baseURL.length > 0 && models.length > 0 && modelFailure === undefined
+    && baseURL.trim().length > 0 && models.length > 0 && modelFailure === undefined
+    && (family === 'codex' || protocol.length > 0)
     && keyFailure === undefined
   // The one blocked gate worth a line under the form. A satisfied card says
   // nothing at all rather than printing an empty paragraph.
@@ -122,15 +127,17 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
     // fall through to it and contradict the filled-in list right above.
     || route.length === 0 || routeInvalid || routeTaken
     ? undefined
-    : baseURL.length === 0
+    : baseURL.trim().length === 0
       ? t('customNeedsBaseUrl')
       : modelFailure !== undefined
         ? `${t('model')} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}`
-        : t('customNeedsModels')
+        : models.length === 0
+          ? t('customNeedsModels')
+          : t('customNeedsProtocol')
 
   /** Perform the create, returning a failure message or undefined. */
   const createOnce = async (): Promise<string | undefined> => {
-    const keyRef = deriveKeyRef(route)
+    const keyRef = deriveKeyRef(family === 'codex' ? `codex:${route}` : route)
     const storesKey = keyValue.length > 0
     if (!committed) {
       const profile = {
@@ -140,7 +147,8 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         // key left blank keeps its provider-native auth path (a credential
         // chain, ADC) instead of resolving a reference nothing ever sets.
         ...storesKey ? { apiKeyEnv: keyRef } : {},
-        api: protocol,
+        ...family === 'pi-ai' ? { api: protocol } : {},
+        ...family === 'codex' && apiFormat === 'responses' ? { apiFormat } : {},
         baseURL,
         models: models.map(model => ({ ...model })),
       }
@@ -148,7 +156,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       // declared after this card opened; the revision makes that race a
       // `settings-conflict` instead of a write over the other profile.
       const written = await operations.writeSettings(
-        NS,
+        ns,
         [{ op: 'set', path: ['providers', route], value: profile as JsonValue }],
         openedAt,
       )
@@ -188,7 +196,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   return (
     <div className={styles['editor']}>
       <div className={styles['editorHeader']}>
-        <span className={styles['editorTitle']}>{t('customTitle')}</span>
+        <span className={styles['editorTitle']}>{t(family === 'codex' ? 'codexTitle' : 'customTitle')}</span>
       </div>
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('customRoute')}</span>
@@ -206,7 +214,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
           key field below already makes between its failure and its hint. */}
       {routeInvalid || routeTaken
         ? <p className={styles['error']}>{t(routeInvalid ? 'customRouteInvalid' : 'customRouteTaken')}</p>
-        : <p className={styles['advancedHint']}>{t('customRouteHint')}</p>}
+        : <p className={styles['advancedHint']}>{t(family === 'codex' ? 'codexRouteHint' : 'customRouteHint')}</p>}
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('customDisplayName')}</span>
         <input
@@ -231,7 +239,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
           onChange={(event) => { setBaseURL(event.target.value) }}
         />
       </div>
-      <div className={styles['field']}>
+      {family === 'pi-ai' ? <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('customApi')}</span>
         <select
           className={`${styles['input']} ${styles['selectInput']}`}
@@ -242,7 +250,19 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         >
           {protocols.map(choice => <option key={choice} value={choice}>{choice}</option>)}
         </select>
-      </div>
+      </div> : <div className={styles['field']}>
+        <span className={styles['fieldLabel']}>{t('codexApiFormat')}</span>
+        <select
+          className={`${styles['input']} ${styles['selectInput']}`}
+          value={apiFormat}
+          aria-label={t('codexApiFormat')}
+          disabled={profileDisabled}
+          onChange={(event) => { setApiFormat(event.target.value as 'chat-completions' | 'responses') }}
+        >
+          <option value="chat-completions">{t('codexChatCompletions')}</option>
+          <option value="responses">{t('codexResponses')}</option>
+        </select>
+      </div>}
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('keyInput')}</span>
         <input
@@ -250,7 +270,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
           type="password"
           autoComplete="off"
           value={keyDraft}
-          placeholder={t('keyPlaceholder')}
+          placeholder={t(family === 'codex' ? 'keyPlaceholderNative' : 'keyPlaceholder')}
           aria-label={t('keyInput')}
           disabled={disabled}
           onChange={(event) => { setKeyDraft(event.target.value) }}
@@ -266,13 +286,15 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         models={models}
         onChange={setModels}
         probe={{
-          settingsNs: NS,
+          settingsNs: ns,
           baseURL,
-          api: protocol,
+          ...family === 'pi-ai' ? { api: protocol } : {},
           ...keyValue.length === 0 ? {} : { apiKey: keyValue },
         }}
         probeBlocked={keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure}
         operations={operations}
+        canFetch={family === 'pi-ai'}
+        {...family === 'codex' ? { emptyMessageKey: 'codexModelsEmpty' as const } : {}}
         t={t}
         disabled={profileDisabled}
       />

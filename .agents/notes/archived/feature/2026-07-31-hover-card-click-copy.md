@@ -3,8 +3,6 @@
 Status: implemented
 Archived: 2026-08-07
 
-English | [中文](2026-07-31-hover-card-click-copy.zh.md)
-
 ## Problem
 
 Workspace and Session rows clip the two values their hover cards expose in full: the Workspace directory path and Session title. The [reachable card](../bug-fix/2026-07-30-hover-popup-pointer-grace.md) permits text selection, but selecting and copying a single known value is a needlessly precise gesture, and the card gives no confirmation that the clipboard accepted it.

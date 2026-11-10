@@ -5,8 +5,6 @@ kind: "package-group"
 
 # web/ — web access capability family
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 The `web/` group provides search and URL retrieval through `ctx.web`, the SearXNG search provider, the public HTTP(S) fetch provider, and model-facing `web_search` and `web_fetch` tools. Provider selection, cancellation, and errors belong to the service.

@@ -11,6 +11,7 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type {
   GenerateOptions,
+  LlmAuthenticationInfo,
   LlmConfigurableProvider,
   LlmDiscoveredModel,
   LlmFailure,
@@ -195,6 +196,15 @@ export interface PreparedAdapterCall {
  * DeepSeek and library-backed pi-ai adapters meet this contract through different internals.
  */
 export abstract class LlmAdapter {
+  /** Describe local authentication without resolving secrets or making a provider request.
+   * @param _provider - registered route to inspect.
+   * @param _model - selected model id.
+   * @returns presence metadata, or unverified when the adapter has no inspector.
+   */
+  describeAuthentication(_provider: string, _model: string): Promise<LlmAuthenticationInfo> {
+    return Promise.resolve({ status: 'unverified' })
+  }
+
   /**
    * Describe one provider route owned by this adapter.
    * @param provider - a route passed to `registerAdapter()` for this instance.
@@ -946,6 +956,16 @@ export class LlmRuntime extends TypertRemoteService {
         })
       },
     })
+  }
+
+  /** Read route-owned authentication metadata without requesting a model or returning secrets.
+   * This does not prove credential validity or provider-managed login readiness.
+   * @param provider - registered provider route.
+   * @param model - selected model id.
+   * @returns detached local presence facts; missing routes reject.
+   */
+  async describeAuthentication(provider: string, model: string): Promise<LlmAuthenticationInfo> {
+    return structuredClone(await this.registration(provider).adapter.describeAuthentication(provider, model))
   }
 
   private registration(provider: string): AdapterRegistration {

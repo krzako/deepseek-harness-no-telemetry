@@ -111,6 +111,24 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** One durable but hidden imported Session, owned until publication or rollback.
+ * Flush on its handle is a durability barrier without public list/stat/open visibility.
+ * A failed or interrupted transaction must not become a resumable normal Session.
+ */
+export interface SessionImportTransaction {
+  readonly handle: SessionHandle
+  /** Durably publish, then invoke the synchronous registry publication callback.
+   * A callback failure hides the stored Session again before rejecting.
+   * @param publish - synchronous publication; must not return a Promise.
+   * @returns the callback result after durable publication.
+   */
+  publish<T>(publish: () => T): Promise<T>
+  /** Close and remove the uncommitted import. Idempotent; errors remain observable.
+   * Refuse rollback after successful publication. Never remove an existing Session.
+   */
+  rollback(): Promise<void>
+}
+
 /**
  * Durable append-only session storage addressed through per-session handles.
  *
@@ -144,6 +162,18 @@ export abstract class SessionPersistence extends Service {
    * @throws {SessionAlreadyExistsError} when the id already exists.
    */
   abstract create(header: SessionHeader, options?: SessionPersistenceCreateOptions): Promise<SessionHandle>
+
+  /** Begin a durable, hidden import with exclusive ownership of a fresh id.
+   * Providers without transactional import must refuse before creating anything.
+   * @param header - fresh Session metadata with import lineage.
+   * @param options - inherited cut and optional cancellation.
+   * @returns the transaction owning its write handle and publication boundary.
+   */
+  beginImport(header: SessionHeader, options?: SessionPersistenceCreateOptions): Promise<SessionImportTransaction> {
+    options?.signal?.throwIfAborted()
+    void header
+    return Promise.reject(new Error('session persistence backend does not support transactional import'))
+  }
 
   /**
    * Open an existing stored session.

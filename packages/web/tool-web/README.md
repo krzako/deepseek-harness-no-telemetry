@@ -5,11 +5,16 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-tool-web
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-tool-web` registers `web_search` and `web_fetch` through `ctx.web`. The search tool queries the configured SearXNG provider for citeable URLs and snippets; fetch reads a selected public HTTP(S) page. Both mark returned text as external and untrusted. Tools remain visible when a provider is unavailable and report a structured error when called.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Use this package
 
@@ -87,4 +92,8 @@ Append-only; each new result follows the reusable request prefix and does not in
 
 ## Known Limitations and Deferred Work
 
-Only URLs accepted by the mounted fetch provider can be retrieved. The bundled provider rejects private destinations, unsupported content, and unsafe redirects.
+- Only URLs accepted by the mounted fetch provider can be retrieved. The bundled provider rejects private destinations, unsupported content, and unsafe redirects.
+
+### Dev Note
+
+None.

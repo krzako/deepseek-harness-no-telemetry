@@ -15,7 +15,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
-import type { ModelSelection, ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { ModelProviderGroup, ModelSelection, ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { CommandContribution, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
 import type { ModelSelectInjected } from '../src/client/slots.ts'
 import { apply, inject } from '../src/client/index.ts'
@@ -61,6 +61,8 @@ async function bench() {
   let selected = defaultSelection
   const calls = { models: 0, select: 0 }
   const projections = new Map<SessionId, SnapshotStore<ModelSelectionProjection | undefined>>()
+  let groups: ModelProviderGroup[] = GROUPS
+  let codexRoutable = false
   // Whether the Host reports an adapter for the current route; the composer
   // block follows this, never catalog membership.
   let routable = true
@@ -71,8 +73,8 @@ async function bench() {
         ok: true as const,
         value: {
           default: defaultSelection,
-          routableProviders: routable ? ['deepseek-official'] : [],
-          groups: GROUPS,
+          routableProviders: [...routable ? ['deepseek-official'] : [], ...codexRoutable ? ['codex:local'] : []],
+          groups,
           failures: [],
         },
       })
@@ -163,6 +165,10 @@ async function bench() {
     setProjected: (id: SessionId, value: ModelSelectionProjection) => { projections.get(id)?.set(value) },
     address: (id: SessionId) => { addressed.add(id) },
     setRoutable: (next: boolean) => { routable = next },
+    setCodexCatalog: (models: Array<{ id: string; name: string }>) => {
+      codexRoutable = true
+      groups = [...GROUPS, { id: 'codex:local', name: 'Codex: local', models }]
+    },
     blockOf: (key: string) => blocks.get(sid(key)),
   }
 }
@@ -170,6 +176,30 @@ async function bench() {
 const projection = (id: string) => ({ sessionId: sid(id) })
 
 describe('ui-model-selection dual entry', () => {
+  it('refreshes a Codex group after settings and keeps standard and Codex selections separate', async () => {
+    const b = await bench()
+    b.mint('s1')
+    const face = b.seat().inject!(sid('s1'))
+    face.load()
+    b.setCodexCatalog([{ id: 'local/old', name: 'Codex: Old' }])
+    b.remote.emit('settings/document-updated', ['codex', 1])
+    await vi.waitFor(() => {
+      expect(face.directory.getSnapshot().groups.map(group => group.id))
+        .toEqual(['deepseek-official', 'codex:local'])
+    })
+    expect(face.directory.getSnapshot().current).toEqual({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    await face.select({ provider: 'codex:local', model: 'local/old' })
+    expect(face.directory.getSnapshot().current).toEqual({ provider: 'codex:local', model: 'local/old' })
+    b.setCodexCatalog([{ id: 'local/new', name: 'Codex: New' }])
+    b.remote.emit('llm/adapters-updated', [])
+    await vi.waitFor(() => {
+      expect(face.directory.getSnapshot().groups[1]?.models).toEqual([{ id: 'local/new', name: 'Codex: New' }])
+    })
+    expect(face.directory.getSnapshot().current).toEqual({ provider: 'codex:local', model: 'local/old' })
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+    expect(face.directory.getSnapshot().current).toEqual({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+  })
+
   it('registers the /model contribution and the composer model seat', async () => {
     const b = await bench()
     expect(b.contribution().name).toBe('model')

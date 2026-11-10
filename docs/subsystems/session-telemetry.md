@@ -1,7 +1,5 @@
 # SessionTelemetryBackend
 
-English | [中文](session-telemetry.zh.md)
-
 Outbound session reporting is split as a [capability seam](../capability-seams.md): the Service Definition and capture coordinator ([dsh-session-telemetry](../../packages/session/session-telemetry), `ctx.sessionTelemetry`) own complete canonical-event capture, the `session-telemetry/record` redaction waterfall, the handoff cursor, and the minimal backend contract; the Service Provider a deployment loads ([dsh-session-telemetry-otel](../../packages/session/session-telemetry-otel)) is the OpenTelemetry JS SDK's log pipeline configured verbatim. It is one optional capability, not part of the agent-loop spine, and nothing here reaches a model request. The boundary axiom — the harness's aspect ends at `emit()`; batching, retry, queueing, and loss policy belong to the reporting SDK — and the rejected alternatives are pinned in the [revival Agent Note](../../.agents/notes/implemented/feature/2026-07-23-session-telemetry-otel-revival.md); the capture and cursor contracts live in the [Service Definition README](../../packages/session/session-telemetry/README.md).
 
 Source: [`packages/session/session-telemetry/src/index.ts`](../../packages/session/session-telemetry/src/index.ts)
@@ -131,7 +129,7 @@ Every record passes the `session-telemetry/record` [waterfall](../cordis-primer.
 
 ## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`). Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
 <a id="ctxsessiontelemetry--sessiontelemetrybackend-abstract-seam"></a>
 

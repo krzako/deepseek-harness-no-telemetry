@@ -5,11 +5,9 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-agent-default-model
 
-English | [中文](README.zh.md)
-
 ## Summary
 
-`dsh-agent-default-model` supplies the deployment's default model selection — provider, model, and optional reasoning effort — that agent entry points apply when a fresh session has no selection of its own. Direct entry points such as `dsh --profile headless` and Host-backed entry points read `ctx.agentDefaultModel` instead of owning parallel defaults, so one composition entry controls which model new agents start on. A mounted settings provider layers the user's choice over the composition entry, and a saved change is visible on the next read. It is one process-wide default: per-session model selection remains the entry point's responsibility. Choose it when you want a single place to set the model new agents use.
+`dsh-agent-default-model` supplies the deployment's default agent and model selection — optional agent, provider, model, and reasoning effort — that entry points apply when a fresh session has no selection of its own. Direct entry points such as `dsh --profile headless` and Host-backed entry points read `ctx.agentDefaultModel` instead of owning parallel defaults, so one composition entry controls which model new agents start on. A mounted settings provider layers the user's choice over the composition entry, and a saved change is visible on the next read. It is one process-wide default: per-session model selection remains the entry point's responsibility.
 
 ## Table of Contents
 
@@ -34,6 +32,7 @@ The composition entry is the base of the default: it requires a provider and mod
 ```yaml
 - name: '@deepseek-ai/dsh-agent-default-model'
   config:
+    agent: standard
     provider: deepseek
     model: deepseek-chat
 ```
@@ -41,13 +40,14 @@ The composition entry is the base of the default: it requires a provider and mod
 | Field | Default | Meaning |
 |---|---|---|
 | `provider` | required | Registered provider route for fresh agents |
+| `agent` | `standard` | `standard` or `codex`; distinguishes equal-named upstream providers |
 | `model` | required | Provider-owned model id for fresh agents |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-agent-default-model) is the exhaustive source for every accepted field. `reasoningEffort` is deliberately not a config field: it belongs to the settings layer, so a complete saved selection can clear an effort when the next selected model has none, while a composition value would be inherited again.
 
 ### Read and change the default
 
-`currentSelection()` returns a detached `{ provider, model, reasoningEffort? }` for a newly created agent; `saveSelection()` stores the complete selection for later agents.
+`currentSelection()` returns a detached runtime `{ provider, model, reasoningEffort? }` for a newly created agent; `saveSelection()` stores the complete selection for later agents. The settings section stores `agent: codex`, the upstream provider id, and its raw model id; the runtime resolves these to a `codex:<provider>` driver route and an encoded gateway model id. Omit `agent` for the standard loop.
 
 ```text
 const selection = ctx.agentDefaultModel.currentSelection()

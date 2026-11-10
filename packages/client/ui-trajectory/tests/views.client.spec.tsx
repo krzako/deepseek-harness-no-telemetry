@@ -234,6 +234,7 @@ function standaloneProps(
     renderSlot: () => null,
     SessionProvider: ({ children }) => <>{children}</>,
     loadImage: () => Promise.reject(new Error('standalone views load no images')),
+    loadAuditArtifact: () => Promise.reject(new Error('standalone views load no audit artifacts')),
     // The locale seat the outlet would inject for the declared namespace.
     t: tZh,
   }
@@ -1266,6 +1267,53 @@ describe('timeline projection', () => {
 })
 
 describe('TrajectoryView state', () => {
+  it('shows Codex audit operations inside Trajectory without another assistant record', () => {
+    const base = historySnapshot(NODES)
+    const snapshot: TrajectorySnapshot = { ...base, codexAuditFacts: [{
+      seq: 12, time: 12,
+      fact: {
+        version: 1, sequence: 1, eventId: 'audit-1', time: 12,
+        threadId: 'thread-1', turn: 1, codexTurnId: 'turn-1',
+        kind: 'model/request', attemptId: 'attempt-1', purpose: 'inference',
+        stage: 'model-visible', apiFormat: 'responses',
+        request: { kind: 'inline', value: { instructions: 'prompt one' } },
+      },
+    }] }
+    render(<TrajectoryView
+      {...standaloneProps(NODES)}
+      {...standaloneHistory(snapshot)}
+      {...standaloneDuration()}
+    />)
+    expect(screen.getByRole('region', { name: 'Codex 审计 · 1' })).toBeTruthy()
+    expect(screen.getByText('audit-1')).toBeTruthy()
+    expect(screen.getByText('attempt-1')).toBeTruthy()
+    expect(screen.getByRole('table')).toBeTruthy()
+  })
+
+  it('labels a session only after a durable Codex thread binding is projected', () => {
+    const props = {
+      ...standaloneProps(NODES),
+      ...standaloneHistory(historySnapshot(NODES)),
+      ...standaloneDuration(),
+    }
+    const projection = ((key: string, selector?: (value: unknown) => unknown) => {
+      const value = key === 'codexThreadBinding' ? true : undefined
+      return selector === undefined ? value : selector(value)
+    }) as UseProjection
+    const unboundProjection = ((key: string, selector?: (value: unknown) => unknown) => {
+      const value = key === 'codexThreadBinding' ? false : undefined
+      return selector === undefined ? value : selector(value)
+    }) as UseProjection
+    const view = render(<TrajectoryView {...props} />)
+    expect(screen.queryByText('Codex')).toBeNull()
+
+    view.rerender(<TrajectoryView {...props} useProjection={unboundProjection} />)
+    expect(screen.queryByText('Codex')).toBeNull()
+
+    view.rerender(<TrajectoryView {...props} useProjection={projection} />)
+    expect(screen.getByText('Codex').getAttribute('title')).toBe('此会话已绑定 Codex 线程')
+  })
+
   it('reveals resident history one bounded page at a time', async () => {
     const nodes: LegacyConversationSlice['nodes'] = Array.from({ length: 5_000 }, (_, index) => ({
       kind: 'user' as const,

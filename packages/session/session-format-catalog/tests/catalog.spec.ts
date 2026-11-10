@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { sessionFormatCatalog } from '../src/index.ts'
 
 describe('first-party Session format catalog', () => {
-  it('statically owns the complete adjacent v0 to v2 chain', () => {
+  it('statically owns the complete adjacent v0 to v3 chain', () => {
     const header = {
       type: 'session',
       version: 0,
@@ -12,13 +12,13 @@ describe('first-party Session format catalog', () => {
       delegationDepth: 0,
     }
 
-    expect(sessionFormatCatalog.currentVersion).toBe(2)
+    expect(sessionFormatCatalog.currentVersion).toBe(3)
     expect(sessionFormatCatalog.readHeader(header)).toEqual({
       status: 'migration-required',
       storedVersion: 0,
-      targetVersion: 2,
+      targetVersion: 3,
       header: {
-        version: 2,
+        version: 3,
         id: 'catalog',
         createdAt: 1,
         isSeeded: true,
@@ -31,13 +31,13 @@ describe('first-party Session format catalog', () => {
       { type: 'turn/start', seq: 0, time: 2, data: { turn: 1 } },
     ])
     expect(sessionFormatCatalog.migrate(current)).toMatchObject({
-      header: { version: 2, id: 'catalog' },
+      header: { version: 3, id: 'catalog' },
     })
   })
 
   it('restores the installed current vocabulary without freezing ordinary payload additions', () => {
     const header = {
-      type: 'session', version: 2, id: 'current-growth', createdAt: 1, isSeeded: false, delegationDepth: 0,
+      type: 'session', version: 3, id: 'current-growth', createdAt: 1, isSeeded: false, delegationDepth: 0,
     }
     const extended = sessionFormatCatalog.decodeArtifact(header, [{
       type: 'turn/start', seq: 0, time: 1, data: { turn: 1, postReleaseMember: true },

@@ -4,7 +4,7 @@ import { mkdir } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type {
-  Agent, AgentOptions, AgentSetup, ModelSelection as AgentModelSelection, ModelSelectionRef,
+  Agent, AgentHandle, AgentOptions, AgentSetup, ModelSelection as AgentModelSelection, ModelSelectionRef,
 } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent-presets'
@@ -142,6 +142,7 @@ export class ApiSessionAgentController {
   private readonly creations = new Map<SessionId, Promise<Agent>>()
   private readonly selections = new WeakMap<Agent, InstalledSelection>()
   private readonly imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
+  private readonly ownedHandles = new Map<SessionId, AgentHandle>()
 
   /** @param ctx - Host context carrying Agent, model, persistence, and Typert services. */
   constructor(private readonly ctx: Context) {
@@ -326,6 +327,52 @@ export class ApiSessionAgentController {
   selectForNextRequest(agent: Agent, selection: AgentModelSelection): void {
     agent.session.append('model/selection', selection)
     this.selectionFor(agent).current = selection
+    if (selection.provider.startsWith('codex:')) {
+      agent.selectModelForNextTurn?.(selection.model, selection.reasoningEffort)
+    }
+  }
+
+  /** Restore the selected Codex model on a resumed thread before admitting input.
+   * @param agent - resumed agent whose next turn receives the selection.
+   * @param selection - durable model selection to restore.
+   */
+  applySelectionForNextTurn(agent: Agent, selection: AgentModelSelection): void {
+    if (selection.provider.startsWith('codex:')) {
+      agent.selectModelForNextTurn?.(selection.model, selection.reasoningEffort)
+    }
+  }
+
+  /** Rebind a blank standard Session to an explicitly selected Codex driver.
+   * @param agent - current live agent for the Session.
+   * @param selection - requested provider and model.
+   * @returns the agent that owns the Session after routing.
+   */
+  async agentForSelection(agent: Agent, selection: AgentModelSelection): Promise<Agent> {
+    const wantsCodex = selection.provider.startsWith('codex:')
+    const hasCodexThread = agent.session.snapshotEvents().some(({ type }: { type: string }) => type === 'codex/thread-bound')
+    if (!wantsCodex) {
+      if (hasCodexThread) {
+        const current = this.selectionFor(agent).current
+        if (current.provider !== selection.provider || current.model !== selection.model) {
+          throw new Error('A Codex session cannot switch to the standard loop; start a new session')
+        }
+      }
+      return agent
+    }
+    if (hasCodexThread) {
+      if (agent.selectModelForNextTurn === undefined) {
+        throw new Error('This Codex session cannot change its model; start a new session')
+      }
+      return agent
+    }
+    if (agent.status !== 'idle' || agent.session.snapshotEvents().some(event => event.type === 'turn/start')) {
+      throw new Error('A standard session cannot switch to Codex after its first turn; start a new session')
+    }
+    const handle = this.ownedHandles.get(agent.id)
+    if (handle?.agent !== agent) throw new Error('This session cannot change its driver; start a new session')
+    await handle.dispose()
+    this.ownedHandles.delete(agent.id)
+    return this.resume(agent.id, undefined, { provider: selection.provider, model: selection.model })
   }
 
   /**
@@ -395,11 +442,11 @@ export class ApiSessionAgentController {
       : { agent }
   }
 
-  private async resume(sessionId: SessionId, supplied?: SessionObservation): Promise<Agent> {
-    if (supplied !== undefined) return this.resumeObserved(sessionId, supplied)
+  private async resume(sessionId: SessionId, supplied?: SessionObservation, options = this.agentOptions()): Promise<Agent> {
+    if (supplied !== undefined) return this.resumeObserved(sessionId, supplied, options)
     try {
       using observation = await this.ctx.sessionQuery.observeSession(sessionId)
-      return await this.resumeObserved(sessionId, observation)
+      return await this.resumeObserved(sessionId, observation, options)
     } catch (error: unknown) {
       if (error instanceof SessionQueryError
         && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') {
@@ -412,6 +459,7 @@ export class ApiSessionAgentController {
   private async resumeObserved(
     sessionId: SessionId,
     observation: SessionObservation,
+    options = this.agentOptions(),
   ): Promise<Agent> {
     if (observation.header.id !== sessionId || observation.header.cwd === undefined) {
       throw new ApiSessionNotFound(`session "${sessionId}" not found`)
@@ -425,11 +473,11 @@ export class ApiSessionAgentController {
     if (published !== undefined && hasApiSessionSubagentOwner(this.ctx, published, live)) {
       throw new ApiSessionSubagentOwnership(sessionId)
     }
-    return (await this.ctx.agents.resume({
+    return this.own(await this.ctx.agents.resume({
       resumeSessionId: sessionId,
-      agentOptions: this.agentOptions(),
+      agentOptions: options,
       setup: composition.setup,
-    })).agent
+    }))
   }
 
   private async createOrAdopt(
@@ -457,11 +505,11 @@ export class ApiSessionAgentController {
         const storedPreset = this.presetForObservation(observation)
         this.assertPresetUnchanged(sessionId, presetId, storedPreset)
         const composition = await this.composeAgent(storedPreset)
-        return (await this.ctx.agents.resume({
+        return this.own(await this.ctx.agents.resume({
           resumeSessionId: sessionId,
           agentOptions: this.agentOptions(),
           setup: composition.setup,
-        })).agent
+        }))
       } catch (error: unknown) {
         if (!(error instanceof SessionQueryError)
           || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error
@@ -474,7 +522,7 @@ export class ApiSessionAgentController {
       throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
     }
     const composition = await this.composeAgent(presetId)
-    return (await this.ctx.agents.create({
+    return this.own(await this.ctx.agents.create({
       sessionId,
       agentOptions: this.agentOptions(),
       meta: {
@@ -482,7 +530,12 @@ export class ApiSessionAgentController {
         ...(composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset }),
       },
       setup: composition.setup,
-    })).agent
+    }))
+  }
+
+  private own(handle: AgentHandle): Agent {
+    this.ownedHandles.set(handle.agent.id, handle)
+    return handle.agent
   }
 
   private agentOptions(): AgentOptions {

@@ -34,6 +34,8 @@ import type {
   ModelCatalog,
   SessionAttachmentRequest,
   SessionAttachmentValue,
+  SessionAuditArtifactRequest,
+  SessionAuditArtifactChunk,
   SessionCancelRequest,
   SessionCancelValue,
   SessionControlFrame,
@@ -73,6 +75,7 @@ export interface TestSessionRemote {
   fork(request: SessionForkRequest): Promise<RemoteResult<SessionForkValue>>
   prompt(request: SessionPromptRequest, signal?: AbortSignal): Promise<RemoteResult<SessionPromptValue>>
   attachment(request: SessionAttachmentRequest): Promise<RemoteResult<SessionAttachmentValue>>
+  auditArtifact(request: SessionAuditArtifactRequest, signal?: AbortSignal): AsyncIterable<SessionAuditArtifactChunk>
   updateQueue(request: SessionUpdateQueueRequest): Promise<RemoteResult<SessionUpdateQueueValue>>
   cancel(request: SessionCancelRequest): Promise<RemoteResult<SessionCancelValue>>
   openWorkspacePath(
@@ -345,6 +348,7 @@ export function createSessionTestRemote(
       signal,
     ),
     attachment: request => remoteResult(() => direct.attachment(request)),
+    auditArtifact: (request, signal = new AbortController().signal) => direct.auditArtifact(request, signal),
     updateQueue: request => remoteResult(() => direct.updateQueue(request)),
     cancel: request => remoteResult(() => direct.cancel(request)),
     openWorkspacePath: (request, signal = new AbortController().signal) => remoteResult(

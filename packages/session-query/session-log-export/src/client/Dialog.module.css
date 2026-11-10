@@ -1,0 +1,17 @@
+.dialog {
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.actions button {
+  min-height: 36px;
+  height: auto;
+  padding-block: 7px;
+}

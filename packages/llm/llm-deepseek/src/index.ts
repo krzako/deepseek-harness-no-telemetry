@@ -455,6 +455,14 @@ export function apply(ctx: Context, config: Config): void {
   const adapter = new DeepSeekAdapter({
     options,
     resolveApiKey,
+    describeAuthentication: async (profile) => {
+      const ref = profile.apiKeyEnv
+      const credentials = ctx.get('credentials')
+      const configured = credentials === undefined
+        ? (launchEnvironmentOf(ctx).get(ref)?.value.length ?? 0) > 0
+        : (await credentials.describe(ref)).configured
+      return { status: configured ? 'configured' : 'missing', reference: ref }
+    },
     resolveUserId,
     resolveAttachments: () => ctx.get('attachments'),
     resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(

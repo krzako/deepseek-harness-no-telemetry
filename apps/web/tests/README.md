@@ -1,7 +1,5 @@
 # apps/web browser e2e
 
-English | [中文](README.zh.md)
-
 These tests boot the real web composition in-process and drive it with a real
 Chromium over real HTTP. The lane's mechanics — modes, fixtures, goldens, and
 the deliberate composition divergences from `dsh web` — are documented in
@@ -41,3 +39,7 @@ scenarios mirror `conversationContextKey` in `support.ts` instead of importing
 its Client owner.
 
 Nothing mechanically enforces this rule; keep it in review.
+
+## Hosts without working GL frame scheduling
+
+The navigation-panes scenarios use `launchWebBrowser` from `support.ts`. Set `DSH_WEB_CHROMIUM_GL=disabled` to pass `--use-gl=disabled` when the installed Chromium cannot produce animation frames even on a minimal page. The unset default keeps Playwright's normal renderer; other values reject. This override does not force clicks, replace requestAnimationFrame, change golden output or weaken assertions. Other scenarios that directly call `chromium.launch()` do not consume this setting. Successful DOM queries alone do not prove rendering readiness: verify an ordinary click and screenshot before interpreting stalled actionability checks as an application failure.

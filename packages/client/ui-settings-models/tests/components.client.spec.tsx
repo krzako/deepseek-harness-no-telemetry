@@ -1247,12 +1247,12 @@ describe('ModelsSection', () => {
       .getByRole('button', { name: openaiCopy(en.deleteConfirm) }))
     await waitFor(() => { expect(unset).toHaveBeenCalledWith('OPENAI_API_KEY') })
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
-    expect(unset.mock.invocationCallOrder[0]).toBeLessThan(mutate.mock.invocationCallOrder[0] as number)
+    expect(mutate.mock.invocationCallOrder[0]).toBeLessThan(unset.mock.invocationCallOrder[0] as number)
     expect(screen.queryByRole('dialog', { name: openaiCopy(en.deleteTitle) })).toBeNull()
     expect(mutate.mock.calls[0]).toEqual([
       'llm-pi-ai',
       [{ op: 'unset', path: ['providers', 'openai'] }],
-      undefined,
+      0,
     ])
   })
 
@@ -1389,12 +1389,12 @@ describe('ModelsSection', () => {
     await removeProviderProfile(
       operationsWith(face),
       controller,
-      { settingsNs: 'llm-plain', settingsPath: ['ghost-profile'] },
+      { settingsNs: 'llm-plain', settingsPath: ['ghost-profile'], revision: 0 },
     )
     expect(mutate.mock.calls[0]).toEqual([
       'llm-plain',
       [{ op: 'unset', path: ['ghost-profile'] }],
-      undefined,
+      0,
     ])
   })
 
@@ -1406,9 +1406,9 @@ describe('ModelsSection', () => {
     const failure = await removeProviderProfile(
       operationsWith(face),
       controller,
-      { settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'] },
+      { settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], revision: 0 },
     )
-    expect(failure).toBe('read-only')
+    expect(failure).toEqual({ kind: 'refused', message: 'read-only' })
     expect(controller.store.getSnapshot().rows).toBe(before)
   })
 
@@ -1423,11 +1423,11 @@ describe('ModelsSection', () => {
     fireEvent.click(confirm)
     await within(dialog).findByText('the host refused')
     expect(screen.getByRole('dialog', { name: openaiCopy(en.deleteTitle) })).toBe(dialog)
-    expect(unset).toHaveBeenCalledOnce()
+    expect(unset).not.toHaveBeenCalled()
     expect(mutate).toHaveBeenCalledOnce()
 
     fireEvent.click(confirm)
-    await waitFor(() => { expect(unset).toHaveBeenCalledTimes(2) })
+    await waitFor(() => { expect(unset).toHaveBeenCalledOnce() })
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(2) })
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: openaiCopy(en.deleteTitle) })).toBeNull()
@@ -1446,11 +1446,24 @@ describe('ModelsSection', () => {
     expect(mutate.mock.calls[0]).toEqual([
       'llm-pi-ai',
       [{ op: 'unset', path: ['providers', 'zombie'] }],
-      undefined,
+      0,
     ])
   })
 
-  it('does not remove provider settings when its managed credential removal is refused', async () => {
+  it('does not delete a managed credential when the profile revision has changed', async () => {
+    const { face, controller, mutate, unset } = await mountSection({
+      mutate: vi.fn(() => Promise.resolve(remoteFail('newer settings', 'settings/conflict'))),
+    })
+    const outcome = await removeProviderProfile(operationsWith(face), controller, {
+      settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], revision: 0,
+      credentialRef: 'OPENAI_API_KEY',
+    })
+    expect(outcome).toEqual({ kind: 'refused', message: 'newer settings' })
+    expect(mutate).toHaveBeenCalledWith('llm-pi-ai', [{ op: 'unset', path: ['providers', 'openai'] }], 0)
+    expect(unset).not.toHaveBeenCalled()
+  })
+
+  it('reports a retained credential after the profile removal commits', async () => {
     const { face, controller, mutate } = await mountSection({
       unset: vi.fn(() => Promise.resolve(remoteFail('credential is read-only'))),
     })
@@ -1460,11 +1473,22 @@ describe('ModelsSection', () => {
       {
         settingsNs: 'llm-pi-ai',
         settingsPath: ['providers', 'openai'],
+        revision: 0,
         credentialRef: 'OPENAI_API_KEY',
       },
     )
-    expect(failure).toBe('credential is read-only')
-    expect(mutate).not.toHaveBeenCalled()
+    expect(failure).toEqual({ kind: 'credential-retained', message: 'credential is read-only' })
+    expect(mutate).toHaveBeenCalledWith('llm-pi-ai', [{ op: 'unset', path: ['providers', 'openai'] }], 0)
+  })
+
+  it('closes a committed deletion and warns when credential cleanup is refused', async () => {
+    await mountSection({ unset: vi.fn(() => Promise.resolve(remoteFail('credential is read-only'))) })
+    fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.removeProvider) }))
+    const dialog = screen.getByRole('dialog', { name: openaiCopy(en.deleteTitle) })
+    fireEvent.click(within(dialog).getByRole('button', { name: openaiCopy(en.deleteConfirm) }))
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: openaiCopy(en.deleteTitle) })).toBeNull() })
+    expect(screen.getByRole('alert').textContent).toContain(en.deleteCredentialRetained)
+    expect(screen.getByRole('alert').textContent).toContain('credential is read-only')
   })
 
 })

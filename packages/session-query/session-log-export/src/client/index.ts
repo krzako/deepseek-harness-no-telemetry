@@ -24,7 +24,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-export type { SessionLogDownloadEntry, SessionLogDownloadState } from './controller.ts'
+export type { SessionArchiveFormat, SessionLogDownloadEntry, SessionLogDownloadState } from './controller.ts'
 
 export const inject = ['slots', 'locale']
 
@@ -47,6 +47,7 @@ export function apply(ctx: ClientContext): void {
     inject: (): SessionLogDownloadDialogInjected => ({
       hooks: { sessionLogDownload: controller.store },
       request: (sessionId: SessionId) => controller.download(sessionId),
+      confirm: (sessionId, format, includeWorkspace) => controller.confirm(sessionId, format, includeWorkspace),
       dismiss: (sessionId: SessionId) => { controller.dismiss(sessionId) },
     }),
   }, SessionLogDownloadHeaderAction))

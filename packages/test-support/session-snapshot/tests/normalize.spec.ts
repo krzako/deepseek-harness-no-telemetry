@@ -6,6 +6,7 @@ import {
   normalizeSessionFormatProvenance,
   normalizeSessionSnapshot,
   normalizeSessionSnapshots,
+  projectPreDriverSelectionSnapshot,
   normalizeStdout,
   scrubRequestHeaders,
   scrubSessionSnapshot,
@@ -23,6 +24,59 @@ const ctx: NormalizeContext = {
   sessionIds: ['11111111-2222-3333-4444-555555555555'],
   cwd: '/tmp/acp-snap-cwd-abc123',
 }
+
+describe('historical driver-selection comparison', () => {
+  it('removes only the newly selected standard driver and rebases declared references', () => {
+    const current = [
+      { type: 'session', id: '{{session:1}}' },
+      { type: 'agent/driver-selected', data: { version: 1, driverId: 'standard' } },
+      { type: 'user/message', data: { content: [{ type: 'text', text: 'seq 8 stays text' }] } },
+      { type: 'session/title', data: { title: 'Title', messageSeqs: [1], source: { kind: 'fallback' } } },
+      { type: 'tool/result', data: { content: 'unchanged' }, sourceEventSeqs: [2] },
+    ].map(event => JSON.stringify(event)).join('\n')
+    const compared = projectPreDriverSelectionSnapshot(`${current}\n`).trimEnd().split('\n').map(line => JSON.parse(line) as Record<string, unknown>)
+    expect(compared.map(event => event['type'])).toEqual(['session', 'user/message', 'session/title', 'tool/result'])
+    expect(compared[1]?.['data']).toEqual({ content: [{ type: 'text', text: 'seq 8 stays text' }] })
+    expect(compared[2]?.['data']).toEqual({ title: 'Title', messageSeqs: [0], source: { kind: 'fallback' } })
+    expect(compared[3]?.['sourceEventSeqs']).toEqual([1])
+  })
+
+  it('rejects a different driver or a reference to the removed event', () => {
+    const header = '{"type":"session"}\n'
+    expect(() => projectPreDriverSelectionSnapshot(`${header}{"type":"agent/driver-selected","data":{"version":1,"driverId":"codex"}}\n`))
+      .toThrow('leading standard driver selection')
+    expect(() => projectPreDriverSelectionSnapshot(`${header}{"type":"agent/driver-selected","data":{"version":1,"driverId":"standard"}}\n{"type":"session/title","data":{"messageSeqs":[0]}}\n`))
+      .toThrow('reference to the selected driver event')
+  })
+
+  it('ignores stream clocks but detects changed model chunks in a historical fixture', () => {
+    const header = { type: 'session', id: '{{session:1}}', createdAt: 1 }
+    const message = (text: string, time: number) => ({
+      type: 'assistant/message',
+      data: {
+        turn: 1,
+        step: 1,
+        message: { role: 'assistant', content: [{ type: 'text', text }] },
+        stream: [
+          { type: 'text-chunks', time0: time, dt: [2], texts: [text] },
+          { type: 'chunk', time: time + 2, chunk: { type: 'finish', reason: { kind: 'stop' } } },
+        ],
+      },
+    })
+    const encode = (records: object[]): string => `${records.map(record => JSON.stringify(record)).join('\n')}\n`
+    const historical = normalizeSessionSnapshots([encode([header, message('original', 100)])], ctx)[0] as string
+    const current = (text: string) => projectPreDriverSelectionSnapshot(
+      normalizeSessionSnapshots([encode([
+        header,
+        { type: 'agent/driver-selected', data: { version: 1, driverId: 'standard' } },
+        message(text, 900),
+      ])], ctx)[0] as string,
+    )
+
+    expect(current('original')).toBe(historical)
+    expect(current('changed')).not.toBe(historical)
+  })
+})
 
 describe('normalizeStdout', () => {
   it('rewrites JSON-RPC ids to a stable first-seen sequence', () => {

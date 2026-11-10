@@ -450,7 +450,7 @@ describe('agent loop', () => {
 
     const types = agent.session.snapshotEvents().map(e => e.type)
     // Durable inbox receipt precedes the turn-owned transcript.
-    expect(types[0]).toBe('agent/inbox/spliced')
+    expect(types.slice(0, 2)).toEqual(['agent/driver-selected', 'agent/inbox/spliced'])
     expect(types).toContain('turn/start')
     expect(types).toContain('user/message')
     expect(types).toContain('assistant/message')

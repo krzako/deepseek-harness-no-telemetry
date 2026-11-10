@@ -67,20 +67,31 @@ export class SettingsSchemaService extends Service {
   }
 
   /**
-   * Resolve an object, dict, or array schema node at a settings path.
+   * Resolve an object, dict, array, or intersected schema node at a settings path.
    * @param root - schema node to traverse.
    * @param path - object keys or array indexes.
    * @returns the resolved node, or `undefined` when the path is absent.
    */
   nodeAtPath(root: SchemaNode, path: readonly string[]): SchemaNode | undefined {
-    let node: SchemaNode | undefined = root
-    for (const key of path) {
-      if (node === undefined) return undefined
-      if (node.type === 'object') node = (node.dict as Record<string, SchemaNode> | undefined)?.[key]
-      else if (node.type === 'dict' || node.type === 'array') node = node.inner as SchemaNode | undefined
-      else return undefined
+    const descend = (node: SchemaNode | undefined, index: number): SchemaNode | undefined => {
+      if (node === undefined || index === path.length) return node
+      if (node.type === 'intersect') {
+        for (const branch of (node.list as SchemaNode[] | undefined) ?? []) {
+          const found = descend(branch, index)
+          if (found !== undefined) return found
+        }
+        return undefined
+      }
+      const key = path[index] as string
+      if (node.type === 'object') {
+        return descend((node.dict as Record<string, SchemaNode> | undefined)?.[key], index + 1)
+      }
+      if (node.type === 'dict' || node.type === 'array') {
+        return descend(node.inner as SchemaNode | undefined, index + 1)
+      }
+      return undefined
     }
-    return node
+    return descend(root, 0)
   }
 
   /**

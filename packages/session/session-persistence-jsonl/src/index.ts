@@ -14,7 +14,7 @@ import {
 } from '@deepseek-ai/dsh-session-format-catalog'
 import { readdirSync, type Dirent } from 'node:fs'
 import { open, mkdir, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { scheduler } from 'node:timers/promises'
 import { randomBytes } from 'node:crypto'
@@ -23,7 +23,7 @@ import {
   SessionPersistenceCorruptionError,
   SessionAlreadyExistsError, SessionPersistenceNotFoundError,
   assertStoredId, materializeCreateHeader, sessionFormatVersionRefusal, validateStoredEvents,
-  type SessionAccess, type SessionHandle,
+  type SessionAccess, type SessionHandle, type SessionImportTransaction,
   type SessionLocation, type SessionPersistenceCreateOptions,
   type SessionPersistenceListOptions, type SessionPersistenceOpenOptions,
   type SessionPersistenceSnapshot, type SessionPersistenceStatOptions,
@@ -31,6 +31,7 @@ import {
 } from '@deepseek-ai/dsh-session-persistence'
 import { JsonlBackendTracker, JsonlSessionHandle } from './storage.ts'
 import { SessionWriteLease } from './lease.ts'
+import { createImportFence, hasImportFence, jsonlImportTransaction, IMPORT_PENDING } from './import-transaction.ts'
 import { SESSION_FORMAT_VERSION, SessionId as makeSessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionId, SessionHeader, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session'
 import {
@@ -51,6 +52,9 @@ import {
   type JsonlGenerationFormatAdapter,
   type JsonlPhysicalIdentity,
 } from './generation.ts'
+
+import { inspectJsonlPendingImport, recoverJsonlPendingImport, type JsonlPendingImport } from './import-recovery.ts'
+export type { JsonlPendingImport } from './import-recovery.ts'
 
 export type { JsonlCompression } from './format.ts'
 
@@ -225,7 +229,8 @@ class JsonlSessionPersistence extends SessionPersistence {
     const inheritedEventCount = SessionLogOffset(options?.inheritedEventCount ?? 0)
     await this.ensureRootEncoding()
     options?.signal?.throwIfAborted()
-    if (this.tracker.hasPending(snapshot.id) || await this.findLog(snapshot.id, options?.signal) !== undefined) {
+    if (this.tracker.hasPending(snapshot.id) || await this.hasPendingImport(snapshot.id, options?.signal)
+      || await this.findLog(snapshot.id, options?.signal) !== undefined) {
       throw new SessionAlreadyExistsError(snapshot.id)
     }
     options?.signal?.throwIfAborted()
@@ -235,6 +240,94 @@ class JsonlSessionPersistence extends SessionPersistence {
     // session leaves no filesystem footprint at all.
     this.tracker.registerCreated(snapshot, inheritedEventCount)
     return this.tracker.adopt(new JsonlSessionHandle(this, snapshot.id, snapshot, 'write', { cursor: 0, materialized: false, inheritedEventCount }))
+  }
+
+  /** Begin a hidden durable import; no normal read can observe its pending log.
+   * @param header - new import identity and lineage.
+   * @param options - inherited cut and cancellation before reservation.
+   * @returns transaction owning the write lease until ordinary handle teardown.
+   */
+  override async beginImport(header: SessionHeader, options?: SessionPersistenceCreateOptions): Promise<SessionImportTransaction> {
+    options?.signal?.throwIfAborted()
+    const snapshot = materializeCreateHeader(header)
+    if (snapshot.importLineage === undefined) throw new Error('transactional import requires lineage')
+    toHeaderLine(snapshot, options?.inheritedEventCount)
+    await this.ensureRootEncoding()
+    if (this.tracker.hasPending(snapshot.id) || await this.hasPendingImport(snapshot.id, options?.signal)
+      || await this.findLog(snapshot.id, options?.signal) !== undefined) throw new SessionAlreadyExistsError(snapshot.id)
+    options?.signal?.throwIfAborted()
+    const directory = sessionDir(this.root, snapshot.cwd, snapshot.id)
+    const lease = await this.acquireWriteLease(snapshot)
+    let fenced = false
+    try {
+      // Recheck under the cross-process lease before reserving or writing any log.
+      if (await this.hasPendingImport(snapshot.id, options?.signal)
+        || await this.findLog(snapshot.id, options?.signal) !== undefined) throw new SessionAlreadyExistsError(snapshot.id)
+      options?.signal?.throwIfAborted()
+      fenced = true
+      await createImportFence(directory)
+      options?.signal?.throwIfAborted()
+      const inheritedEventCount = SessionLogOffset(options?.inheritedEventCount ?? 0)
+      this.tracker.registerCreated(snapshot, inheritedEventCount)
+      const handle = this.tracker.adopt(new JsonlSessionHandle(this, snapshot.id, snapshot, 'write',
+        { cursor: 0, materialized: false, inheritedEventCount }, lease))
+      return jsonlImportTransaction(handle, logPath(this.root, snapshot.cwd, snapshot.id, this.compression))
+    } catch (error: unknown) {
+      const failures: unknown[] = [error]
+      if (fenced) { try { await rm(join(directory, IMPORT_PENDING), { force: true }) } catch (cleanup: unknown) { failures.push(cleanup) } }
+      try { await lease.release() } catch (cleanup: unknown) { failures.push(cleanup) }
+      if (failures.length > 1) throw new AggregateError(failures, 'import reservation and cleanup failed')
+      throw error
+    }
+  }
+
+  /** Inspect hidden imports without acquiring leases or changing their data.
+   * A report does not prove that its owner has exited; recovery checks the kernel lease.
+   * @param signal - cancellation while scanning and hashing artifacts.
+   * @returns inventories with explicit unknown outcomes, including live pending imports.
+   */
+  async inspectPendingImports(signal?: AbortSignal): Promise<JsonlPendingImport[]> {
+    const reports: JsonlPendingImport[] = []
+    for (const project of await this.listProjectDirs(signal)) {
+      for (const directory of await this.listSessionDirs(project, signal)) {
+        if (!await hasImportFence(directory)) continue
+        const segment = basename(directory)
+        const id = makeSessionId(segment.replace(/~([0-9A-F]{4})/g, (_match, code: string) => String.fromCharCode(parseInt(code, 16))))
+        if (encodeSegment(id) !== segment) throw new Error('noncanonical pending import directory')
+        const report = await inspectJsonlPendingImport(directory, id, signal)
+        if (report !== undefined) reports.push(report)
+      }
+    }
+    return reports
+  }
+
+  /** Retain uncertain data or discard a reviewed empty reservation under exclusive ownership.
+   * No action publishes or resumes the interrupted Session. Retained imports require
+   * operator review and a fresh archive import to a new ID; their audit remains intact.
+   * @param report - observation from inspectPendingImports; changes require a new report.
+   * @param action - explicit choice, with data deletion forbidden for nonempty imports.
+   * @param signal - cancellation before cleanup.
+   * @returns disposition without replaying historical effects.
+   */
+  async recoverPendingImport(
+    report: JsonlPendingImport, action: 'retain' | 'discard-empty', signal?: AbortSignal,
+  ): Promise<'retained-outcome-unknown' | 'discarded-empty'> {
+    const matches: string[] = []
+    for (const project of await this.listProjectDirs(signal)) {
+      const directory = join(project, encodeSegment(report.sessionId))
+      if (await hasImportFence(directory)) matches.push(directory)
+    }
+    const directory = matches[0]
+    if (matches.length !== 1 || directory === undefined) throw new Error('import recovery requires one unambiguous pending reservation')
+    return recoverJsonlPendingImport(directory, report, action, signal)
+  }
+
+  private async hasPendingImport(id: SessionId, signal?: AbortSignal): Promise<boolean> {
+    for (const project of await this.listProjectDirs(signal)) {
+      signal?.throwIfAborted()
+      if (await hasImportFence(join(project, encodeSegment(id)))) return true
+    }
+    return false
   }
 
   /**
@@ -248,6 +341,7 @@ class JsonlSessionPersistence extends SessionPersistence {
     options?.signal?.throwIfAborted()
     await this.ensureRootEncoding()
     options?.signal?.throwIfAborted()
+    if (await this.hasPendingImport(id, options?.signal)) throw new SessionPersistenceNotFoundError(id)
     const pending = this.tracker.pendingOf(id)
     if (access === 'read') {
       if (pending !== undefined) {
@@ -321,6 +415,7 @@ class JsonlSessionPersistence extends SessionPersistence {
     options?.signal?.throwIfAborted()
     await this.ensureRootEncoding()
     options?.signal?.throwIfAborted()
+    if (await this.hasPendingImport(id, options?.signal)) return undefined
     const pending = this.tracker.pendingOf(id)
     if (pending !== undefined) {
       return { header: pending.header, revision: pending.revision }
@@ -375,7 +470,7 @@ class JsonlSessionPersistence extends SessionPersistence {
       }
     }
     for (const [id, entry] of pending) {
-      if (!listed.has(id)) snapshots.push({ header: entry.header, revision: entry.revision })
+      if (!listed.has(id) && !await this.hasPendingImport(id, signal)) snapshots.push({ header: entry.header, revision: entry.revision })
     }
     signal?.throwIfAborted()
     return snapshots
@@ -738,6 +833,7 @@ class JsonlSessionPersistence extends SessionPersistence {
       signal?.throwIfAborted()
       for (const dir of await this.listSessionDirs(project, signal)) {
         signal?.throwIfAborted()
+        if (await hasImportFence(dir)) continue
         const selected = await this.resolveGenerationInDirectory(dir, signal)
         if (selected === undefined) continue
         let header: SessionHeader | undefined
@@ -818,6 +914,7 @@ class JsonlSessionPersistence extends SessionPersistence {
     readonly createdAt: number
     readonly cwd?: string
     readonly parentSession?: string
+    readonly importLineage?: { readonly sourceSessionId: string; readonly sourceDriverId: string; readonly importId: string }
     readonly isSeeded: boolean
     readonly origin?: 'subagent'
     readonly delegationDepth: number
@@ -835,6 +932,13 @@ class JsonlSessionPersistence extends SessionPersistence {
       ...(header.parentSession === undefined
         ? {}
         : { parentSession: makeSessionId(header.parentSession) }),
+      ...(header.importLineage === undefined ? {} : {
+        importLineage: {
+          sourceSessionId: makeSessionId(header.importLineage.sourceSessionId),
+          sourceDriverId: header.importLineage.sourceDriverId,
+          importId: header.importLineage.importId,
+        },
+      }),
       isSeeded: header.isSeeded,
       ...(header.origin === undefined ? {} : { origin: header.origin }),
       delegationDepth: header.delegationDepth,

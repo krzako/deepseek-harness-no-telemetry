@@ -1,0 +1,23 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false
+  },
+  "include": [
+    "./**/*.ts"
+  ],
+  "references": [
+    {
+      "path": ".."
+    },
+    {
+      "path": "../../../llm/deepseek-llm-api-extensions"
+    },
+    {
+      "path": "../../../interaction/permission-presets"
+    }
+  ]
+}

@@ -44,6 +44,8 @@ describe('session-log-download browser plugin', () => {
     expect(entry?.options).toMatchObject({ id: 'session-log-download' })
     const injected = (entry?.inject as unknown as () => import('../src/client/Dialog.tsx').SessionLogDownloadDialogInjected)()
     await injected.request(SID)
+    expect(b.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.status).toBe('confirmation')
+    await injected.confirm(SID, 'portable')
     expect(b.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.status).toBe('error')
     injected.dismiss(SID)
     expect(b.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.open).toBe(false)
@@ -63,6 +65,9 @@ describe('session-log-download browser plugin', () => {
     first.ctx.emit('command/executed', SID, 'export', { kind: 'error', text: 'bad path' })
     expect(fetcher).not.toHaveBeenCalled()
     first.ctx.emit('command/executed', SID, 'export', { kind: 'success' })
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(first.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.status).toBe('confirmation')
+    await first.ctx.sessionLogDownload.confirm(SID, 'portable')
     await vi.waitFor(() => {
       expect(fetcher).toHaveBeenCalledOnce()
       expect(first.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.status).toBe('error')

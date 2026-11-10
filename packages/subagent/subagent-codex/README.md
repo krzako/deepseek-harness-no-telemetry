@@ -5,8 +5,6 @@ kind: "package-bundle"
 
 # @deepseek-ai/dsh-subagent-codex
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-subagent-codex` registers a Profile-named Codex subagent provider (default `codex`) that runs a real Codex child through the official app-server protocol in the delegating session's workspace. Each accepted run starts the package-local Codex wrapper with `app-server --stdio`, creates one ephemeral Codex thread, submits one self-contained text task, and returns the selected final answer — or a separate safe failure diagnostic — through the shared subagent result contract. The provider ships as an optional Profile Bundle: installing it brings the official wrapper and one compatible native platform payload, while the registered provider stays dormant until a bound tool calls it. Native Codex configuration and authentication remain authoritative, and the Profile-selected `permissionMode` maps into the thread's approval, reviewer, and sandbox fields. Choose it when the child should be a genuine Codex session, fully isolated from the parent harness.
@@ -188,7 +186,7 @@ These limits define when this provider is a poor fit or needs special operationa
 This Dev Note is working context for maintainers: open questions and undecided directions. It is explicitly non-authoritative — shipped behavior and limits live in the sections above and in the package code.
 
 - **Payload size disclosure** — the current darwin-arm64 platform payload packs to about 114 MB and unpacks to about 282 MB; these are disclosure numbers, not installation thresholds.
-- **Version-pinned protocol** — the runtime dependency is pinned to `@openai/codex@0.149.1`; upgrading requires regenerating the upstream schema evidence and rerunning the credentialed nonce tests.
+- **Version-pinned protocol** — the adapter targets protocol 0.149.1 while the executable is the deployment-owned fork selected by `DSH_CODEX_BIN`; upgrading the protocol requires regenerating upstream schema evidence and rerunning the credentialed nonce tests.
 
 </details>
 

@@ -9,6 +9,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { ModelsSection, providerCopy } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
 import { CustomProviderCard } from '../src/client/CustomProviderCard.tsx'
+import { ProviderEditor } from '../src/client/ProviderEditor.tsx'
 import { formatCapacity, parseCapacity } from '../src/client/DeepSeekModelsEditor.tsx'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { ModelsSettingsStore, deriveKeyRef, protocolChoices } from '../src/client/store.ts'
@@ -39,6 +40,22 @@ const PiAiConfig = Schema.object({
     })),
     reasoning: Schema.union(['off', 'high']),
   })),
+})
+
+const CodexConfig = Schema.object({
+  providers: Schema.dict(Schema.intersect([
+    Schema.object({
+      apiKeyEnv: Schema.string().role('credential-ref'),
+      displayName: Schema.string(),
+      baseURL: Schema.string(),
+      models: Schema.array(Schema.object({
+        id: Schema.string().required(), name: Schema.string(),
+        contextWindow: Schema.number(), maxTokens: Schema.number(),
+      })),
+      headers: Schema.dict(Schema.string()),
+    }),
+    Schema.object({ apiFormat: Schema.union(['chat-completions', 'responses']).default('chat-completions') }),
+  ])),
 })
 
 function ok<T>(value: T) {
@@ -92,6 +109,19 @@ function piAiNamespace(
   }
 }
 
+function codexNamespace(profile: Record<string, JsonValue>): SettingsNamespaceView {
+  return {
+    ns: 'codex',
+    schema: JSON.parse(JSON.stringify(CodexConfig.toJSON())) as JsonValue,
+    value: { providers: { local: profile } },
+    base: { providers: {} },
+    user: { providers: { local: profile } },
+    applies: 'live',
+    secrets: [],
+    revision: 3,
+  }
+}
+
 function scriptedFace(options: {
   providers?: Record<string, JsonValue>
   /** User layer, when it differs from the effective section. */
@@ -100,6 +130,8 @@ function scriptedFace(options: {
   baseProviders?: Record<string, JsonValue>
   /** Routes the adapter reports as hand-declared; the rest come back as shipped. */
   declaredRoutes?: readonly string[]
+  /** Install the Codex settings namespace, optionally with configured profiles. */
+  codexProviders?: Record<string, JsonValue>
   discover?: ReturnType<typeof vi.fn>
   mutate?: ReturnType<typeof vi.fn>
   set?: ReturnType<typeof vi.fn>
@@ -108,6 +140,11 @@ function scriptedFace(options: {
     openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy.example/v1' },
   }
   const namespace = piAiNamespace(providers, options.userProviders ?? providers, options.baseProviders ?? {})
+  const codex = options.codexProviders === undefined ? undefined : {
+    ...codexNamespace({}),
+    value: { providers: options.codexProviders },
+    user: { providers: options.codexProviders },
+  }
   const discover = options.discover ?? vi.fn(() => Promise.resolve(ok([])))
   const mutate = options.mutate ?? vi.fn(() => Promise.resolve(remoteOk(namespace)))
   const set = options.set ?? vi.fn(() => Promise.resolve(remoteOk(undefined)))
@@ -117,18 +154,26 @@ function scriptedFace(options: {
         Object.keys(providers).map(provider => ({ id: provider, name: provider })),
       ))),
       listConfigurableProviders: vi.fn(() => Promise.resolve(ok(
-        Object.keys(providers).map(provider => ({
+        [...Object.keys(providers).map(provider => ({
           provider,
           displayName: provider,
           settingsNs: 'llm-pi-ai',
           settingsPath: ['providers', provider],
           declared: options.declaredRoutes?.includes(provider) ?? false,
-        })),
+        })), ...Object.keys(options.codexProviders ?? {}).map(provider => ({
+          provider: `codex:${provider}`,
+          displayName: `Codex: ${provider}`,
+          settingsNs: 'codex',
+          settingsPath: ['providers', provider],
+          declared: true,
+        }))],
       ))),
       discoverModels: discover,
     },
     settings: {
-      describe: vi.fn(() => Promise.resolve(remoteOk({ writable: true, namespaces: [namespace] }))),
+      describe: vi.fn(() => Promise.resolve(remoteOk({ writable: true,
+        namespaces: codex === undefined ? [namespace] : [namespace, codex],
+      }))),
       mutate,
     },
     credentials: {
@@ -243,6 +288,195 @@ function within_(scope: HTMLElement, label: string): HTMLElement {
   if (found === undefined) throw new Error(`no "${label}" button`)
   return found
 }
+
+describe('Codex provider editor', () => {
+  function mountCodex(profile: Record<string, JsonValue>, write?: ReturnType<typeof vi.fn>) {
+    const { face, mutate, set, discover } = scriptedFace({
+      ...write === undefined ? {} : { mutate: write },
+    })
+    const onClose = vi.fn()
+    render(<ProviderEditor
+      provider="codex:local"
+      displayName="Codex: Local"
+      namespace={codexNamespace(profile)}
+      settingsPath={['providers', 'local']}
+      schema={settingsSchema}
+      operations={operationsWith(face)}
+      t={t}
+      readOnly={false}
+      onClose={onClose}
+    />)
+    fireEvent.click(screen.getByText(en.customized))
+    return { mutate, set, discover, onClose }
+  }
+
+  it('edits Codex identity, endpoint, models and optional wire format without a discovery adapter', async () => {
+    const { mutate, set, discover, onClose } = mountCodex({
+      displayName: 'Local', baseURL: 'https://old.example/v1',
+      models: [{ id: 'flash', name: 'Flash', contextWindow: 131072, maxTokens: 8192 }],
+      headers: { 'X-Route': 'keep-me' },
+    })
+    expect(screen.getByLabelText<HTMLSelectElement>(en.codexApiFormat).value).toBe('chat-completions')
+    expect(screen.queryByText(en.fetchModels)).toBeNull()
+    fireEvent.change(screen.getByLabelText(en.codexApiFormat), { target: { value: 'responses' } })
+    fireEvent.change(screen.getByLabelText(en.customDisplayName), { target: { value: 'Local Gateway' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://new.example/v1' } })
+    fireEvent.change(screen.getByLabelText(`${en.modelName} 1`), { target: { value: 'Flash 2' } })
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'fresh-key' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+    expect(firstMutate(mutate)).toEqual({
+      ns: 'codex', expectedRevision: 3,
+      ops: [
+        { op: 'set', path: ['providers', 'local', 'displayName'], value: 'Local Gateway' },
+        { op: 'set', path: ['providers', 'local', 'baseURL'], value: 'https://new.example/v1' },
+        { op: 'set', path: ['providers', 'local', 'models'], value: [
+          { id: 'flash', name: 'Flash 2', contextWindow: 131072, maxTokens: 8192 },
+        ] },
+        { op: 'set', path: ['providers', 'local', 'apiFormat'], value: 'responses' },
+        { op: 'set', path: ['providers', 'local', 'apiKeyEnv'], value: 'CODEX_LOCAL_API_KEY' },
+      ],
+    })
+    expect(set).toHaveBeenCalledWith('CODEX_LOCAL_API_KEY', 'fresh-key')
+    expect(discover).not.toHaveBeenCalled()
+    expect(firstMutate(mutate).ops.some(op => op.path.includes('headers'))).toBe(false)
+  })
+
+  it('clears an explicit Responses choice to inherit Chat Completions', async () => {
+    const { mutate, onClose } = mountCodex({
+      apiFormat: 'responses', baseURL: 'https://model.example/v1', models: [{ id: 'flash' }],
+    })
+    fireEvent.change(screen.getByLabelText(en.codexApiFormat), { target: { value: 'chat-completions' } })
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+    expect(firstMutate(mutate).ops).toEqual([
+      { op: 'unset', path: ['providers', 'local', 'apiFormat'] },
+    ])
+  })
+
+  it('refuses a stale Codex profile edit without storing its new credential', async () => {
+    const conflicting = vi.fn(() => Promise.resolve(remoteFail('newer revision', 'settings/conflict')))
+    const { set, onClose } = mountCodex({ baseURL: 'https://old.example/v1', models: [{ id: 'flash' }] }, conflicting)
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://new.example/v1' } })
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'new-key' } })
+    fireEvent.click(screen.getByText(en.apply))
+    await screen.findByText(en.conflict)
+    expect(conflicting).toHaveBeenCalledWith('codex', expect.any(Array), 3)
+    expect(set).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+})
+
+describe('Codex provider creation and removal', () => {
+  function mountCreate(options: { taken?: string[]; mutate?: ReturnType<typeof vi.fn> } = {}) {
+    const { face, mutate, set, discover } = scriptedFace({
+      codexProviders: {},
+      ...options.mutate === undefined ? {} : { mutate: options.mutate },
+    })
+    const onClose = vi.fn()
+    render(<CustomProviderCard
+      family="codex"
+      taken={options.taken ?? []}
+      protocols={[]}
+      revision={11}
+      operations={operationsWith(face)}
+      t={t}
+      readOnly={false}
+      onClose={onClose}
+    />)
+    return { mutate, set, discover, onClose }
+  }
+
+  function fillCreate(): void {
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'local' } })
+    fireEvent.change(screen.getByLabelText(en.customDisplayName), { target: { value: 'Local' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://local.example/v1' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'flash' } })
+  }
+
+  it('creates a Codex profile with default Chat Completions without storing the default', async () => {
+    const { mutate, set, discover, onClose } = mountCreate()
+    expect(screen.getByText(en.codexTitle)).toBeTruthy()
+    expect(screen.getByLabelText<HTMLSelectElement>(en.codexApiFormat).value).toBe('chat-completions')
+    expect(screen.getByText(en.codexModelsEmpty)).toBeTruthy()
+    expect(screen.queryByText(en.fetchModels)).toBeNull()
+    fillCreate()
+    fireEvent.click(screen.getByText(en.create))
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+    expect(firstMutate(mutate)).toEqual({
+      ns: 'codex', expectedRevision: 11,
+      ops: [{ op: 'set', path: ['providers', 'local'], value: {
+        displayName: 'Local', baseURL: 'https://local.example/v1', models: [{ id: 'flash' }],
+      } }],
+    })
+    expect(set).not.toHaveBeenCalled()
+    expect(discover).not.toHaveBeenCalled()
+  })
+
+  it('stores explicit Responses and a credential reference derived from the Codex route', async () => {
+    const { mutate, set, onClose } = mountCreate()
+    fillCreate()
+    fireEvent.change(screen.getByLabelText(en.codexApiFormat), { target: { value: 'responses' } })
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: '  local-key  ' } })
+    fireEvent.click(screen.getByText(en.create))
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual({
+      displayName: 'Local', apiKeyEnv: 'CODEX_LOCAL_API_KEY', apiFormat: 'responses',
+      baseURL: 'https://local.example/v1', models: [{ id: 'flash' }],
+    })
+    expect(set).toHaveBeenCalledWith('CODEX_LOCAL_API_KEY', 'local-key')
+  })
+
+  it('rejects duplicate route IDs and stale namespace revisions before replacing a profile', async () => {
+    const duplicate = mountCreate({ taken: ['local'] })
+    fillCreate()
+    expect(screen.getByText(en.customRouteTaken)).toBeTruthy()
+    expect(buttonNamed(en.create).disabled).toBe(true)
+    expect(duplicate.mutate).not.toHaveBeenCalled()
+    cleanup()
+
+    const conflicting = vi.fn(() => Promise.resolve(remoteFail('changed', 'settings/conflict')))
+    const { set, onClose } = mountCreate({ mutate: conflicting })
+    fillCreate()
+    fireEvent.click(screen.getByText(en.create))
+    await screen.findByText(en.conflict)
+    expect(conflicting).toHaveBeenCalledWith('codex', expect.any(Array), 11)
+    expect(set).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('refuses a duplicate Codex model ID before any profile or credential write', () => {
+    const { mutate, set } = mountCreate()
+    fillCreate()
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 2`), { target: { value: 'flash' } })
+    expect(screen.getByText(`${en.model} 2: ${en.modelIdDuplicate}`)).toBeTruthy()
+    expect(buttonNamed(en.create).disabled).toBe(true)
+    expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+  })
+
+  it('offers creation in the Models section and deletes the user-owned Codex profile by path', async () => {
+    const { mutate } = await mountSection({ codexProviders: { local: {
+      baseURL: 'https://local.example/v1', models: [{ id: 'flash' }],
+    } } })
+    const target = { provider: 'codex:local', displayName: 'Codex: local' }
+    fireEvent.click(screen.getByRole('button', { name: providerCopy(en.removeProvider, target) }))
+    const dialog = screen.getByRole('dialog', { name: providerCopy(en.deleteTitle, target) })
+    fireEvent.click(within_(dialog, providerCopy(en.deleteConfirm, target)))
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate)).toEqual({
+      ns: 'codex', expectedRevision: 3, ops: [{ op: 'unset', path: ['providers', 'local'] }],
+    })
+    cleanup()
+
+    await mountSection({ codexProviders: {} })
+    fireEvent.click(screen.getByRole('button', { name: en.codexAdd }))
+    expect(screen.getByText(en.codexTitle)).toBeTruthy()
+  })
+})
 
 describe('protocolChoices', () => {
   it('reads the protocols out of the namespace schema and nothing else', async () => {
@@ -1264,6 +1498,12 @@ describe('hand-declared providers', () => {
   it('offers no protocol when the namespace declares none', () => {
     mountCard({ protocols: [] })
     expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).value).toBe('')
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
+    expect(screen.getByText(en.customNeedsProtocol)).toBeTruthy()
+    expect(buttonNamed(en.create).disabled).toBe(true)
   })
 
   it('closes without writing on cancel, and honors a read-only deployment', () => {

@@ -145,6 +145,9 @@ describe('llm-deepseek real dynamic composition', () => {
     vi.stubEnv('DEEPSEEK_API_KEY', 'entry-key')
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const { ctx } = await loadComposition({ withDynamic: false, baseURL: server.url })
+    await expect(ctx.llm.describeAuthentication('deepseek-official', 'deepseek-v4-flash'))
+      .resolves.toEqual({ status: 'configured', reference: 'DEEPSEEK_API_KEY' })
+    expect(server.requests).toHaveLength(0)
     const session = ctx.sessions.create(SessionId('extension-composition'))
     session.append('turn/start', { turn: 1 })
 

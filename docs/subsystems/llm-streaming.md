@@ -1,12 +1,14 @@
 # LLM Streaming
 
-English | [中文](llm-streaming.zh.md)
-
 The conversation and streaming types from [`packages/llm`](../../packages/llm/README.md): the `Message`/`ContentBlock` variants every request and durable history share, the fully assembled model request, the raw `StreamChunk` protocol, the adapter contract every adapter must implement, and the shared assembler. The [core packages](core.md) hold and log these values on every turn; this page declares them.
 
 Source: [`packages/llm/llm/src/types.ts`](../../packages/llm/llm/src/types.ts)
 
 <a id="content-blocks-and-messages"></a>
+
+## Local authentication metadata
+
+`LlmAuthenticationInfo` reports `configured` or `missing` with a credential reference, or `provider-managed`/`unverified` without one. It carries no credential values. The adapter owns inspection; configured means local presence, not remote validity. See the [LLM service](../../packages/llm/llm/README.md) for dispatch and the provider READMEs for resolution policy.
 
 ## Content blocks and messages
 
@@ -771,6 +773,12 @@ interface PreparedLlmCall {
  * DeepSeek and library-backed pi-ai adapters meet this contract through different internals.
  */
 declare abstract class LlmAdapter {
+  /** Describe local authentication without resolving secrets or making a provider request.
+   * @param _provider - registered route to inspect.
+   * @param _model - selected model id.
+   * @returns presence metadata, or unverified when the adapter has no inspector.
+   */
+  describeAuthentication(_provider: string, _model: string): Promise<LlmAuthenticationInfo>;
   /**
    * Describe one provider route owned by this adapter.
    * @param provider - a route passed to `registerAdapter()` for this instance.
@@ -842,34 +850,7 @@ declare abstract class LlmAdapter {
 
 ## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
-
-<a id="ctxdeepseekllmapiextensions--deepseekllmapiextensionregistry"></a>
-
-### `ctx.deepseekLlmApiExtensions` — `DeepSeekLlmApiExtensionRegistry`
-
-Registry of independently owned top-level fields for official DeepSeek requests.
-
-```ts cordis-catalog
-/**
- * Register the sole provider of one top-level request field. Registration is effect-scoped.
- * @param field - declaration-merged field owned by the provider.
- * @param provider - request-time field preparation and optional acceptance behavior.
- * @returns disposer that releases the field.
- */
-register<K extends keyof DeepSeekLlmApiExtensionMap>( field: K, provider: DeepSeekLlmApiExtensionProvider<DeepSeekLlmApiExtensionMap[K]>, ): () => Promise<void>
-
-/**
- * Prepare every currently registered field from one immutable base request.
- * Preparation failures reject before HTTP dispatch. Field values are cloned and frozen;
- * providers retain no mutable alias to the outgoing request.
- * @param request - exact serialized request facts before extension fields.
- * @returns detached fields and their idempotent joint acceptance transaction.
- */
-async prepare(request: DeepSeekLlmApiExtensionRequest): Promise<PreparedDeepSeekLlmApiExtensions>
-```
-
-Source: [`packages/llm/deepseek-llm-api-extensions/src/index.ts`](../../packages/llm/deepseek-llm-api-extensions/src/index.ts)
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`). Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
 <a id="ctxllm--llmruntime"></a>
 
@@ -1010,6 +991,14 @@ async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<Ll
  * @returns a prepared config and its registration-bound stream entry point.
  */
 async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>
+
+/** Read route-owned authentication metadata without requesting a model or returning secrets.
+ * This does not prove credential validity or provider-managed login readiness.
+ * @param provider - registered provider route.
+ * @param model - selected model id.
+ * @returns detached local presence facts; missing routes reject.
+ */
+async describeAuthentication(provider: string, model: string): Promise<LlmAuthenticationInfo>
 
 /**
  * Stream one model call as raw chunks (token-level deltas). Replay state is

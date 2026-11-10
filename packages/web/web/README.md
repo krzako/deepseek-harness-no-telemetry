@@ -5,11 +5,16 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-web
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `dsh-web` provides `ctx.web.search()` and `ctx.web.fetch()` with separate provider registries. It selects one usable provider for each capability at call time and reports structured `WebError` failures. The service makes no network requests itself and registers no model-facing tool.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Use this package
 
@@ -37,4 +42,8 @@ No direct invalidation; retained tool results change only when a consumer execut
 
 ## Known Limitations and Deferred Work
 
-Without a usable provider, calls fail with `WEB_PROVIDER_UNAVAILABLE`; ambiguous or configured unavailable providers fail with their corresponding `WebError` codes.
+- Without a usable provider, calls fail with `WEB_PROVIDER_UNAVAILABLE`; ambiguous or configured unavailable providers fail with their corresponding `WebError` codes.
+
+### Dev Note
+
+None.

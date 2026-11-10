@@ -139,6 +139,57 @@ describe('ApiSession identity failures', () => {
 })
 
 describe('ApiSession Agent lookup and recovery', () => {
+  it('keeps an auto-selected Codex session when the same standard route is selected again', async () => {
+    const { ctx, agents } = await harness()
+    const current = agent(ctx, header('auto-codex'))
+    vi.spyOn(current.session, 'snapshotEvents').mockReturnValue([{
+      type: 'codex/thread-bound',
+    } as never])
+    agents.selectionFor(current).current = { provider: 'fixture', model: 'fixture-model' }
+
+    await expect(agents.agentForSelection(current, { provider: 'fixture', model: 'fixture-model' }))
+      .resolves.toBe(current)
+    await expect(agents.agentForSelection(current, { provider: 'other', model: 'fixture-model' }))
+      .rejects.toThrow('cannot switch to the standard loop')
+  })
+
+  it('accepts a new Codex model on a bound thread and applies it after selection is durable', async () => {
+    const { ctx, agents } = await harness()
+    const current = agent(ctx, header('codex-model-switch'))
+    const selectModelForNextTurn = vi.fn()
+    current.selectModelForNextTurn = selectModelForNextTurn
+    vi.spyOn(current.session, 'snapshotEvents').mockReturnValue([{
+      type: 'codex/thread-bound',
+    } as never])
+    const selected = { provider: 'codex:openrouter', model: 'openrouter/model-b' }
+    await expect(agents.agentForSelection(current, selected)).resolves.toBe(current)
+    expect(selectModelForNextTurn).not.toHaveBeenCalled()
+    agents.selectForNextRequest(current, selected)
+    expect(selectModelForNextTurn).toHaveBeenCalledWith(selected.model, undefined)
+    expect(agents.selectionFor(current).current).toEqual(selected)
+  })
+
+  it('rebinds a blank owned standard session to an explicitly selected Codex route', async () => {
+    const { ctx, agents } = await harness()
+    const meta = header('blank-switch')
+    const standard = agent(ctx, meta)
+    const codex = { ...standard } as Agent
+    const dispose = vi.fn(() => Promise.resolve())
+    const resume = vi.spyOn(ctx.agents, 'resume')
+      .mockResolvedValueOnce({ agent: standard, dispose })
+      .mockResolvedValueOnce({ agent: codex, dispose: () => Promise.resolve() })
+    providePersistence(ctx, {
+      list: () => Promise.resolve([meta]),
+      inspect: () => Promise.resolve({ meta, events: [] }),
+    })
+    expect(await agents.resolveAgent(meta.id)).toEqual({ agent: standard })
+    const selected = { provider: 'codex:openrouter', model: 'openrouter/z-ai%2Fglm-5.3-flash' }
+    await expect(agents.agentForSelection(standard, selected)).resolves.toBe(codex)
+    expect(dispose).toHaveBeenCalledOnce()
+    expect(resume).toHaveBeenLastCalledWith(expect.objectContaining({
+      resumeSessionId: meta.id, agentOptions: selected,
+    }))
+  })
   it('resumes directly from a retained observation and rejects an invalid observed header', async () => {
     const { ctx, agents } = await harness()
     const meta = header('observed-resume')

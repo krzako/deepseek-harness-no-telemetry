@@ -36,10 +36,16 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@deepseek-ai/dsh-agent": "workspace:^",
+    "@deepseek-ai/dsh-agent-codex": "workspace:^",
+    "@deepseek-ai/dsh-atomic-write": "workspace:^",
+    "@deepseek-ai/dsh-brand": "workspace:^",
     "@deepseek-ai/dsh-session-format": "workspace:^",
+    "@deepseek-ai/dsh-session-format-catalog": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
     "fflate": "^0.8.2",
-    "@deepseek-ai/dsh-brand": "workspace:^"
+    "koffi": "^3.1.0",
+    "yauzl": "^3.4.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -49,7 +55,6 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-client-connection": "workspace:^",
     "@deepseek-ai/dsh-client-locale": "workspace:^",
@@ -63,8 +68,10 @@
     "@deepseek-ai/dsh-commands": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-session-persistence": "workspace:^",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:^",
     "@deepseek-ai/dsh-session-query": "workspace:^",
     "@types/react": "~18.3.1",
+    "@types/yauzl": "^3.4.0",
     "react": "^18.2.0"
   },
   "dsh": {

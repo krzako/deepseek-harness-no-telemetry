@@ -359,7 +359,7 @@ describe('payload change judgement', () => {
     // The README pattern is deliberately loose: over-reporting a change costs one
     // unnecessary patch bump, while under-reporting fails the next publish on a
     // version whose bytes moved.
-    expect(reachesPayload(sourceShipping, 'vendor/cosmokit/README.i18n.yaml')).toBe(true)
+    expect(reachesPayload(sourceShipping, 'vendor/cosmokit/README.md')).toBe(true)
     expect(reachesPayload(member('packages/a/library', '@deepseek-ai/dsh-library', { files: ['lib/index.js'] }),
       'packages/a/library/tests/library.spec.ts')).toBe(false)
   })

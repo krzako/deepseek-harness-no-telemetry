@@ -25,6 +25,9 @@
     },
     {
       "path": "../../session/session-format-catalog"
+    },
+    {
+      "path": "../../llm/deepseek-llm-api-extensions"
     }
   ]
 }

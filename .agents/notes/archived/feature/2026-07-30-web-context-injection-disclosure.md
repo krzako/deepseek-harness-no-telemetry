@@ -3,8 +3,6 @@
 Status: implemented
 Archived: 2026-08-07
 
-English | [中文](2026-07-30-web-context-injection-disclosure.zh.md)
-
 ## Problem
 
 The Web conversation rendered every logged non-user message through the generic `JsonBlock`. That presentation used a textual triangle, compact label typography, a bordered JSON panel, and unrelated spacing, so context injection did not match the Tool calls disclosure shown in the product design. Restyling the generic primitive would also change unknown events and attachment fallbacks.

@@ -98,4 +98,18 @@ describe('SettingsSchemaService node traversal', () => {
     expect(service.nodeAtPath({ type: 'object' } as SchemaNode, ['x'])).toBeUndefined()
     expect(service.nodeAtPath({ type: 'dict' } as SchemaNode, ['x'])).toBeUndefined()
   })
+
+  it('resolves fields contributed by either branch of an intersected provider profile', () => {
+    const root = service.rehydrate(wire(Schema.object({
+      providers: Schema.dict(Schema.intersect([
+        Schema.object({ baseURL: Schema.string(), models: Schema.array(Schema.object({ id: Schema.string() })) }),
+        Schema.object({ apiFormat: Schema.union(['chat-completions', 'responses']) }),
+      ])),
+    })))
+    expect(service.nodeAtPath(root, ['providers', 'local'])?.type).toBe('intersect')
+    expect(service.nodeAtPath(root, ['providers', 'local', 'baseURL'])?.type).toBe('string')
+    expect(service.nodeAtPath(root, ['providers', 'local', 'models', '0', 'id'])?.type).toBe('string')
+    expect(service.nodeAtPath(root, ['providers', 'local', 'apiFormat'])?.type).toBe('union')
+    expect(service.nodeAtPath(root, ['providers', 'local', 'missing'])).toBeUndefined()
+  })
 })

@@ -3,7 +3,18 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Browser, Locator, Page } from 'playwright'
+import { chromium, type Browser, type Locator, type Page } from 'playwright'
+
+/** Launch Chromium with an explicit local GL override for hosts whose renderer cannot produce frames.
+ * DSH_WEB_CHROMIUM_GL=disabled selects --use-gl=disabled; absence preserves Playwright defaults.
+ * This changes rendering only, never input actionability checks, clocks or assertions.
+ * @returns an owned Browser that the scenario must close.
+ */
+export function launchWebBrowser(): Promise<Browser> {
+  const gl = process.env['DSH_WEB_CHROMIUM_GL']
+  if (gl !== undefined && gl !== 'disabled') throw new Error('DSH_WEB_CHROMIUM_GL must be disabled or unset')
+  return chromium.launch(gl === 'disabled' ? { args: ['--use-gl=disabled'] } : {})
+}
 
 /** The built page under test; `pnpm run test:web` rebuilds it before running. */
 export const DIST_INDEX = fileURLToPath(new URL('../dist/index.html', import.meta.url))

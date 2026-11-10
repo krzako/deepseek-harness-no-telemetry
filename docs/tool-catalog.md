@@ -2200,7 +2200,7 @@ Source: [`packages/web/tool-web/src/index.ts`](../packages/web/tool-web/src/inde
 
 ### `web_search`
 
-Search the web through SearXNG for current information. Provide 1–4 queries in the required queries array. Returns source URLs and snippets.
+Search the web through SearXNG for current information. Provide 1–4 queries in the required queries array. Returns up to 12 combined source URLs and snippets.
 
 ```json
 {

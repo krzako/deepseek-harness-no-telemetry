@@ -316,6 +316,25 @@ export class Session implements SessionFace {
     return { ok: true, value: { attachment: result.value.attachment, data } }
   }
 
+  /**
+   * Return text only after the Host completes the session-authorized, hash-checked stream.
+   * @param eventId - durable fact naming the payload.
+   * @param sha256 - digest in the fact's artifact reference.
+   * @param signal - optional cancellation before complete verification.
+   * @returns complete UTF-8 text; stream or decoding failures reject without partial text.
+   */
+  async readAuditArtifact(eventId: string, sha256: string, signal?: AbortSignal): Promise<string> {
+    const decoder = new TextDecoder('utf-8', { fatal: true })
+    const parts: string[] = []
+    for await (const chunk of this.remote.session.auditArtifact({ sessionId: this.sessionId, eventId, sha256 }, signal)) {
+      const binary = atob(chunk.data)
+      const bytes = Uint8Array.from(binary, char => char.charCodeAt(0))
+      parts.push(decoder.decode(bytes, { stream: true }))
+    }
+    parts.push(decoder.decode())
+    return parts.join('')
+  }
+
   /** Apply one operation to a still-pending queue occurrence. */
   async updateQueue(itemId: MessageId, action: QueueAction): Promise<RemoteResult<{ accepted: true }>> {
     return this.remote.session.updateQueue({ sessionId: this.sessionId, itemId, action })

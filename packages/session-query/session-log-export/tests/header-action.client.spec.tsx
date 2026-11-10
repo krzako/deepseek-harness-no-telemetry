@@ -28,6 +28,7 @@ function bench() {
     sessionId: SID,
     useSessionLogDownload,
     request,
+    confirm: (id: SessionId, format: 'portable' | 'log') => controller.confirm(id, format),
     dismiss,
     t: (key: keyof typeof en): string => en[key],
   } as unknown as SessionLogDownloadDialogProps
@@ -44,6 +45,8 @@ describe('Session export Header action', () => {
     expect(button.querySelector('svg')).not.toBeNull()
     fireEvent.click(button)
     await waitFor(() => { expect(b.request).toHaveBeenCalledWith(SID) })
+    expect(await b.view.findByRole('dialog', { name: 'Export unencrypted Session' })).toBeTruthy()
+    fireEvent.click(b.view.getByRole('button', { name: 'Download portable ZIP (unencrypted)' }))
     expect(await b.view.findByRole('dialog', { name: 'Session download started' })).toBeTruthy()
   })
 
@@ -61,7 +64,8 @@ describe('Session export Header action', () => {
       t: (key: keyof typeof en): string => en[key],
     } as unknown as SessionLogDownloadDialogProps)} />)
 
-    const download = controller.download(SID)
+    await controller.download(SID)
+    const download = controller.confirm(SID, 'portable')
     const button = b.view.getByRole('button', { name: 'Session log' })
     await waitFor(() => { expect(button.getAttribute('aria-busy')).toBe('true') })
     expect((button as HTMLButtonElement).disabled).toBe(true)

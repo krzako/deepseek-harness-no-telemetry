@@ -6,7 +6,7 @@ import type {
 import { COMPACTION_INTERRUPTED_ERROR } from './copy-codes.ts'
 import type {
   TrajectoryConversationViewNode, TrajectoryRequestHeaderState,
-  TrajectorySnapshot,
+  TrajectorySnapshot, TrajectoryCodexAuditFact,
 } from './trajectory-contract.ts'
 
 const EMPTY_LIST: readonly never[] = []
@@ -21,6 +21,7 @@ export const EMPTY_TRAJECTORY_SNAPSHOT: TrajectorySnapshot = {
   callSchemas: new Map(),
   partial: null,
   runningCalls: EMPTY_LIST,
+  codexAuditFacts: EMPTY_LIST,
 }
 
 function stepKey(turn: number, step: number): string {
@@ -215,6 +216,7 @@ export class TrajectorySnapshotBuilder implements ConversationViewBuilder<
     let previousTools: ReadonlyMap<string, ToolSchema> = new Map()
     let partial: TrajectorySnapshot['partial'] = null
     const runningCalls: TrajectorySnapshot['runningCalls'][number][] = []
+    const codexAuditFacts: TrajectoryCodexAuditFact[] = []
 
     for (const contribution of this.contributions) {
       const data = contribution.data
@@ -255,6 +257,10 @@ export class TrajectorySnapshotBuilder implements ConversationViewBuilder<
         requests.push(data.request)
         continue
       }
+      if (data.kind === 'codex-audit') {
+        codexAuditFacts.push(data.audit)
+        continue
+      }
       if (data.kind === 'session-end') {
         boundaries.push({ seq: data.seq, time: data.time })
         continue
@@ -279,6 +285,7 @@ export class TrajectorySnapshotBuilder implements ConversationViewBuilder<
       callSchemas,
       partial,
       runningCalls,
+      codexAuditFacts,
     }
   }
 

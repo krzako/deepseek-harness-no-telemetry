@@ -43,6 +43,7 @@ export {
   normalizeSessionLog,
   normalizeSessionSnapshot,
   normalizeSessionSnapshots,
+  projectPreDriverSelectionSnapshot,
   normalizeStdout,
   scrubRequestHeaders,
   scrubSessionSnapshot,
